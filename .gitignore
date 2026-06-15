@@ -1,0 +1,33 @@
+# Environnement virtuel
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Secrets (à ne jamais publier)
+.env
+.env.*
+*.key
+*.pem
+.streamlit/secrets.toml
+
+# Logs
+*.log
+.streamlit-logs/
+
+# OS / éditeurs
+.DS_Store
+.vscode/
+.idea/
+
+# Base vectorielle ChromaDB (régénérable, binaire)
+data/vectorstore/
+
+# Config locale Claude Code
+.claude/settings.local.json

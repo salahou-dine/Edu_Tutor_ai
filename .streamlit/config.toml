@@ -1,0 +1,20 @@
+# Désactive le surveillant de fichiers de Streamlit.
+# Raison : transformers (tiré par sentence-transformers) déclenche des
+# centaines de "ModuleNotFoundError: torchvision" inoffensifs quand le watcher
+# inspecte ses sous-modules. On le coupe pour garder un terminal propre.
+# Conséquence : pas de rechargement auto à l'édition du code -> relancer l'app.
+[server]
+fileWatcherType = "none"
+# Sert les fichiers de interface/static/ à l'URL /app/static/ (pour ouvrir les
+# cours dans un nouvel onglet du navigateur).
+enableStaticServing = true
+
+[logger]
+level = "warning"
+
+# Thème sombre uniforme (façon ChatGPT) : chat un peu plus clair que la sidebar.
+[theme]
+base = "dark"
+backgroundColor = "#212327"          # zone de conversation
+secondaryBackgroundColor = "#17181c" # sidebar + champs (un peu plus foncé)
+textColor = "#ececf0"
