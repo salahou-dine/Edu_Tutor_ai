@@ -29,5 +29,11 @@ __pycache__/
 # Base vectorielle ChromaDB (régénérable, binaire)
 data/vectorstore/
 
+# Données utilisateur sensibles (jamais à publier) :
+# - conversations.json contient les échanges des étudiants ;
+# - last_tutor_prompt.md contient un prompt interne (debug).
+data/conversations.json
+data/last_tutor_prompt.md
+
 # Config locale Claude Code
 .claude/settings.local.json

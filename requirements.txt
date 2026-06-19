@@ -1,2 +1,12 @@
-streamlit
-chromadb
+# Dépendances Python du projet hermes-education (EduTutor).
+# Versions minimales = celles validées ; les patchs sont autorisés (>=).
+# Borne haute volontaire : l'UI s'appuie sur des sélecteurs CSS internes
+# (data-testid) de Streamlit ; un bump MAJEUR pourrait casser le rendu en silence.
+# Revalider l'interface avant de relever cette borne.
+streamlit>=1.58.0,<2.0
+chromadb>=1.5.9
+sentence-transformers>=5.5.1   # embedding multilingue (tire torch + transformers)
+PyMuPDF>=1.27.2.3              # extraction de texte des PDF (fitz)
+
+# Dépendance EXTERNE (hors pip) : Hermes Agent — le binaire CLI `hermes` doit être
+# installé et configuré (modèle/provider, skill education-tutor dans ~/.hermes/skills).

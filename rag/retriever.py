@@ -3,10 +3,7 @@ from pathlib import Path
 import chromadb
 
 from rag.embeddings import get_embedding_function, collection_metadata
-
-
-VECTORSTORE_PATH = "data/vectorstore"
-COLLECTION_NAME = "course_chunks"
+from config import settings
 
 
 def list_indexed_courses() -> list[dict]:
@@ -16,10 +13,10 @@ def list_indexed_courses() -> list[dict]:
 
     Retourne une liste de {"title": ..., "source": ...}.
     """
-    client = chromadb.PersistentClient(path=VECTORSTORE_PATH)
+    client = chromadb.PersistentClient(path=str(settings.VECTORSTORE_PATH))
     try:
         collection = client.get_or_create_collection(
-            name=COLLECTION_NAME,
+            name=settings.COLLECTION_NAME,
             embedding_function=get_embedding_function(),
             metadata=collection_metadata(),
         )
@@ -38,13 +35,60 @@ def list_indexed_courses() -> list[dict]:
     return list(courses.values())
 
 
-def search_course(query: str, n_results: int = 3):
+def rerank_chunks(query: str, chunks: list[dict], top_k: int) -> list[dict]:
     """
-    Recherche les chunks les plus pertinents dans ChromaDB.
+    Sélectionne les `top_k` meilleurs chunks parmi le vivier récupéré, via le
+    reranker (cross-encoder). Repli automatique sur le tri par distance si le
+    reranker est indisponible. Voir `rag.reranker`.
     """
-    client = chromadb.PersistentClient(path=VECTORSTORE_PATH)
+    from rag.reranker import rerank
+
+    return rerank(query, chunks, top_k)
+
+
+def get_course_chunks(course: str) -> list[dict]:
+    """
+    Tous les chunks d'un cours (identifié par son titre), ordonnés par
+    chunk_index. Sert au résumé global : on reconstitue le TEXTE INTÉGRAL du
+    cours, indépendamment de toute recherche.
+    """
+    client = chromadb.PersistentClient(path=str(settings.VECTORSTORE_PATH))
+    try:
+        collection = client.get_or_create_collection(
+            name=settings.COLLECTION_NAME,
+            embedding_function=get_embedding_function(),
+            metadata=collection_metadata(),
+        )
+        data = collection.get(include=["documents", "metadatas"])
+    except Exception:
+        return []
+
+    rows: list[dict] = []
+    for document, metadata in zip(
+        data.get("documents") or [], data.get("metadatas") or []
+    ):
+        if course in (metadata.get("title"), metadata.get("source")):
+            rows.append(
+                {
+                    "text": document,
+                    "section": metadata.get("section"),
+                    "page": metadata.get("page"),
+                    "chunk_index": metadata.get("chunk_index"),
+                    "source": metadata.get("source"),
+                    "title": metadata.get("title"),
+                }
+            )
+    rows.sort(key=lambda r: r.get("chunk_index") or 0)
+    return rows
+
+
+def search_course(query: str, n_results: int = settings.RETRIEVAL_TOP_K):
+    """
+    Recherche les chunks les plus pertinents dans ChromaDB (vivier de candidats).
+    """
+    client = chromadb.PersistentClient(path=str(settings.VECTORSTORE_PATH))
     collection = client.get_or_create_collection(
-        name=COLLECTION_NAME,
+        name=settings.COLLECTION_NAME,
         embedding_function=get_embedding_function(),
         metadata=collection_metadata(),
     )
@@ -71,6 +115,8 @@ def search_course(query: str, n_results: int = 3):
                 "source": metadata.get("source"),
                 "chunk_index": metadata.get("chunk_index"),
                 "title": metadata.get("title"),
+                "section": metadata.get("section"),
+                "page": metadata.get("page"),
                 "distance": distance,
             }
         )

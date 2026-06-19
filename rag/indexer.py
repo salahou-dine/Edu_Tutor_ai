@@ -3,14 +3,10 @@ from pathlib import Path
 
 import chromadb
 
-from rag.chunker import chunk_markdown_file, chunk_document_text
-from rag.document_loader import load_document_text
+from rag.chunker import chunk_segments
+from rag.document_loader import load_document_segments
 from rag.embeddings import get_embedding_function, collection_metadata
 from config import settings
-
-
-VECTORSTORE_PATH = "data/vectorstore"
-COLLECTION_NAME = "course_chunks"
 
 
 def _is_indexable(path: Path) -> bool:
@@ -30,86 +26,155 @@ def _relative_source(path: Path) -> str:
         return str(path)
 
 
-def _derive_title(text: str, path: Path) -> str:
-    """Titre du cours : premier titre Markdown H1, sinon nom de fichier nettoyé."""
-    match = re.search(r"^\s{0,3}#\s+(.+?)\s*$", text, flags=re.MULTILINE)
-    if match:
-        title = re.sub(r"^cours\s*:\s*", "", match.group(1), flags=re.IGNORECASE)
-        return title.strip()
+def _derive_title(path: Path) -> str:
+    """Titre du cours : premier titre Markdown H1 (.md), sinon nom de fichier nettoyé."""
+    if path.suffix.lower() == ".md":
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                match = re.match(r"^\s{0,3}#\s+(.+?)\s*$", line)
+                if match:
+                    title = re.sub(
+                        r"^cours\s*:\s*", "", match.group(1), flags=re.IGNORECASE
+                    )
+                    return title.strip()
+        except OSError:
+            pass
     return path.stem.replace("_", " ").replace("-", " ").strip()
 
 
-def reset_collection(client, collection_name: str):
+def _course_records(path: Path) -> tuple[list[str], list[str], list[dict]] | None:
     """
-    Supprime puis recrée la collection.
-    Pour le POC, c'est plus simple : à chaque indexation, on repart proprement.
+    Construit (ids, documents, metadatas) pour UN cours. La métadonnée `mtime`
+    (date de modif du fichier) permet au sync incrémental de détecter un cours
+    modifié. Retourne None si le cours ne produit aucun chunk exploitable.
     """
-    try:
-        client.delete_collection(collection_name)
-    except Exception:
-        pass
+    segments = load_document_segments(str(path))
+    title = _derive_title(path)
+    source = _relative_source(path)
+    chunks = chunk_segments(segments, source=source, title=title)
+    if not chunks:
+        return None
 
-    return client.get_or_create_collection(
-        name=collection_name,
+    mtime = path.stat().st_mtime
+    ids: list[str] = []
+    documents: list[str] = []
+    metadatas: list[dict] = []
+    for chunk in chunks:
+        ids.append(chunk["id"])
+        documents.append(chunk["text"])
+        meta = {
+            "source": chunk["source"],
+            "chunk_index": chunk["chunk_index"],
+            "mtime": mtime,
+        }
+        if chunk.get("title"):
+            meta["title"] = chunk["title"]
+        if chunk.get("section"):
+            meta["section"] = chunk["section"]
+        if chunk.get("page") is not None:
+            meta["page"] = chunk["page"]
+        metadatas.append(meta)
+    return ids, documents, metadatas
+
+
+def _indexable_files(courses_dir: str | None) -> tuple[Path, dict[str, Path]]:
+    """Dossier de base + mapping {source relatif: chemin} des cours indexables."""
+    base = Path(courses_dir) if courses_dir else settings.COURSES_DIR
+    if not base.is_absolute():
+        base = settings.PROJECT_ROOT / base
+    files = (
+        {_relative_source(p): p for p in base.iterdir() if _is_indexable(p)}
+        if base.exists()
+        else {}
+    )
+    return base, files
+
+
+def sync_courses_index(courses_dir: str | None = None) -> dict:
+    """
+    Synchronisation INCRÉMENTALE du vectorstore avec le dossier des cours.
+
+    Le vectorstore est la source persistante : chaque cours n'est vectorisé
+    qu'UNE fois. On compare les cours présents (et leur date de modif) à ce qui
+    est déjà indexé, puis on n'agit que sur les différences :
+      - cours ajouté   -> on indexe ses chunks ;
+      - cours supprimé -> on retire ses chunks ;
+      - cours modifié  -> on remplace ses chunks ;
+      - inchangé       -> on n'y touche pas (rechargement de page = no-op).
+
+    Retour : {"status", "added", "updated", "removed", "chunks_added", "errors"}.
+    """
+    _, files = _indexable_files(courses_dir)
+    client = chromadb.PersistentClient(path=str(settings.VECTORSTORE_PATH))
+    collection = client.get_or_create_collection(
+        name=settings.COLLECTION_NAME,
         embedding_function=get_embedding_function(),
         metadata=collection_metadata(),
     )
 
+    # Cours déjà indexés (source -> mtime stockée).
+    existing: dict[str, float | None] = {}
+    data = collection.get(include=["metadatas"])
+    for meta in data.get("metadatas") or []:
+        source = meta.get("source")
+        if source is not None and source not in existing:
+            existing[source] = meta.get("mtime")
 
-def index_course(file_path: str):
-    """
-    Découpe un cours Markdown en chunks et les indexe dans ChromaDB.
-    """
-    chunks = chunk_markdown_file(file_path)
-
-    if not chunks:
-        raise ValueError("Aucun chunk généré. Vérifie le fichier de cours.")
-
-    client = chromadb.PersistentClient(path=VECTORSTORE_PATH)
-    collection = reset_collection(client, COLLECTION_NAME)
-
-    ids = [chunk["id"] for chunk in chunks]
-    documents = [chunk["text"] for chunk in chunks]
-    metadatas = [
-        {
-            "source": chunk["source"],
-            "chunk_index": chunk["chunk_index"],
-        }
-        for chunk in chunks
+    current_mtimes = {source: path.stat().st_mtime for source, path in files.items()}
+    removed = [s for s in existing if s not in files]
+    changed = [
+        s for s in files if s not in existing or existing.get(s) != current_mtimes[s]
     ]
 
-    collection.add(
-        ids=ids,
-        documents=documents,
-        metadatas=metadatas,
-    )
+    # On retire les chunks des cours supprimés ET des cours modifiés (avant ré-ajout).
+    for source in removed + [s for s in changed if s in existing]:
+        try:
+            collection.delete(where={"source": source})
+        except Exception:
+            pass
 
-    print(f"Indexation terminée.")
-    print(f"Fichier indexé : {file_path}")
-    print(f"Nombre de chunks indexés : {len(chunks)}")
-    print(f"Collection : {COLLECTION_NAME}")
-    print(f"Vectorstore : {VECTORSTORE_PATH}")
+    added: list[str] = []
+    updated: list[str] = []
+    errors: list[str] = []
+    chunks_added = 0
+    for source in changed:
+        try:
+            records = _course_records(files[source])
+            if records is None:
+                errors.append(f"{source} : aucun contenu exploitable.")
+                continue
+            ids, documents, metadatas = records
+            collection.add(ids=ids, documents=documents, metadatas=metadatas)
+            chunks_added += len(ids)
+            (updated if source in existing else added).append(source)
+        except Exception as exc:
+            errors.append(f"{source} : {exc}")
+
+    return {
+        "status": "success",
+        "added": added,
+        "updated": updated,
+        "removed": removed,
+        "chunks_added": chunks_added,
+        "errors": errors,
+    }
 
 
 def index_all_courses(courses_dir: str | None = None, reset: bool = True) -> dict:
     """
-    Indexe TOUS les cours supportés d'un dossier (logique principale du MVP).
+    Indexe TOUS les cours d'un dossier en RECONSTRUISANT la base (rebuild complet).
 
-    - lit les fichiers .md/.txt/.pdf de `courses_dir` (data/courses par défaut) ;
-    - ignore dossiers, fichiers cachés/temporaires et formats non supportés ;
-    - ne touche jamais à data/samples/ (dossier distinct) ;
-    - réinitialise la collection si `reset=True` (base active = cours présents) ;
-    - n'échoue pas s'il n'y a aucun cours.
+    À utiliser quand la LOGIQUE d'indexation change (découpage, embedding) : le
+    sync incrémental ne réindexe que les fichiers modifiés, donc un changement de
+    logique nécessite ce rebuild. Pour l'usage normal (ajout/suppression de
+    cours), préférer `sync_courses_index`.
 
     Retour :
         {"status": "success"|"empty", "documents_indexed": int,
          "chunks_indexed": int, "errors": [..], "message"?: str}
     """
-    base = Path(courses_dir) if courses_dir else settings.COURSES_DIR
-    if not base.is_absolute():
-        base = settings.PROJECT_ROOT / base
-
-    files = sorted(p for p in base.iterdir() if _is_indexable(p)) if base.exists() else []
+    base, files_map = _indexable_files(courses_dir)
+    files = sorted(files_map.values())
 
     client = chromadb.PersistentClient(path=str(settings.VECTORSTORE_PATH))
 
@@ -121,26 +186,14 @@ def index_all_courses(courses_dir: str | None = None, reset: bool = True) -> dic
 
     for path in files:
         try:
-            text = load_document_text(str(path))
-            title = _derive_title(text, path)
-            chunks = chunk_document_text(
-                text=text, source=_relative_source(path), title=title
-            )
-            if not chunks:
+            records = _course_records(path)
+            if records is None:
                 errors.append(f"{path.name} : aucun contenu exploitable.")
                 continue
-
-            for chunk in chunks:
-                ids.append(chunk["id"])
-                documents.append(chunk["text"])
-                meta = {
-                    "source": chunk["source"],
-                    "chunk_index": chunk["chunk_index"],
-                }
-                if chunk.get("title"):
-                    meta["title"] = chunk["title"]
-                metadatas.append(meta)
-
+            file_ids, file_docs, file_metas = records
+            ids.extend(file_ids)
+            documents.extend(file_docs)
+            metadatas.extend(file_metas)
             documents_indexed += 1
         except Exception as exc:
             errors.append(f"{path.name} : {exc}")

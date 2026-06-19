@@ -7,12 +7,20 @@ L'interface n'appelle QUE la couche agent propre :
 Elle n'affiche jamais d'éléments développeur (chunks, distances, top_k, prompt
 Hermes, vectorstore, logs). L'étudiant voit : sa question, la réponse du tuteur,
 l'indication de la partie du cours, la question de vérification, et l'historique.
+
+PÉRIMÈTRE (hypothèse assumée) : application MONO-UTILISATEUR. L'état vit en
+session Streamlit et les données (cours, vectorstore, conversations.json) sont
+partagées et non concurrentes. Le passage multi-utilisateurs (authentification,
+stockage par étudiant, gestion de la concurrence) est une phase ultérieure du
+projet, pas un correctif ponctuel.
 """
 
 import html
 import json
 import shutil
 import sys
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -25,14 +33,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-# Le RAG (retriever) utilise des chemins relatifs comme data/vectorstore :
-# on se place à la racine du projet pour qu'ils résolvent correctement.
-import os
-
-os.chdir(PROJECT_ROOT)
+# Les chemins (vectorstore, cours, conversations…) sont tous dérivés de la racine
+# du projet dans config.settings : pas besoin de changer le répertoire courant.
 
 from agents.tutor_agent import answer_student_question_for_ui
-from rag.indexer import index_all_courses
+from rag.indexer import sync_courses_index
 
 
 COURSES_DIR = PROJECT_ROOT / "data" / "courses"
@@ -46,11 +51,20 @@ STATIC_COURSES_URL = "app/static/courses"
 # Discussions persistées entre les sessions.
 CONVERSATIONS_PATH = PROJECT_ROOT / "data" / "conversations.json"
 
+# Plafond du nombre de discussions conservées : borne la taille du fichier
+# (réécrit en entier à chaque message). Volontairement élevé — on ne purge que
+# les fils les plus anciens (par dernière activité), jamais le fil ouvert.
+MAX_CONVERSATIONS = 200
+
+# Amorces pédagogiques GÉNÉRIQUES (indépendantes du corpus) : l'étudiant uploade
+# ses propres cours, en nombre variable — on ne sait pas lesquels ni sur quoi il
+# va interroger. Ces suggestions marchent quel que soit le cours et montrent ce
+# que le tuteur sait faire (cf. persona EduTutor).
 EXAMPLE_QUESTIONS = [
-    "Qu'est-ce que le RAG ?",
-    "Pourquoi le RAG réduit-il les hallucinations ?",
-    "Quelles sont les étapes principales d'un pipeline RAG ?",
-    "Pourquoi le chunking est-il important ?",
+    "Résume-moi un de mes cours",
+    "Explique-moi une notion que je n'ai pas comprise",
+    "Interroge-moi pour réviser",
+    "Aide-moi à résoudre un exercice",
 ]
 
 # Libellé pédagogique (jamais le nom technique du mode) + classe CSS du badge.
@@ -59,6 +73,7 @@ MODE_INFO = {
     "mixed": ("Cours + complément pédagogique", "mixed"),
     "general_tutor": ("Réponse générale", "general"),
     "clarify": ("Quel cours ?", "mixed"),
+    "course_summary": ("Résumé du cours", "course"),
 }
 
 ERROR_MESSAGE = (
@@ -122,58 +137,6 @@ st.markdown(
     .edu-badge.mixed   { background: #eaf0fb; color: #2f5fc0; }
     .edu-badge.general { background: #f1eefa; color: #6b4bb0; }
 
-    /* Sections sous la réponse */
-    .edu-section-label {
-        color: var(--edu-ink);
-        font-size: 0.95rem;
-        font-weight: 700;
-        margin: 0.9rem 0 0.4rem;
-    }
-
-    .edu-card {
-        border: 1px solid var(--edu-border);
-        border-radius: 10px;
-        background: #ffffff;
-        padding: 0.7rem 0.85rem;
-        margin: 0.45rem 0;
-    }
-    .edu-card .edu-course { color: var(--edu-ink); font-weight: 650; font-size: 0.92rem; }
-    .edu-card .edu-part   { color: var(--edu-accent); font-size: 0.86rem; margin: 0.1rem 0 0.35rem; }
-    .edu-card .edu-excerpt{ color: var(--edu-muted); font-size: 0.88rem; line-height: 1.5; }
-
-    .edu-verify {
-        border: 1px solid var(--edu-border);
-        border-left: 4px solid var(--edu-accent);
-        border-radius: 10px;
-        background: #f3f9fa;
-        color: var(--edu-ink);
-        padding: 0.75rem 0.9rem;
-        margin: 0.4rem 0;
-        font-size: 0.95rem;
-    }
-
-    .edu-note {
-        border: 1px dashed rgba(49, 65, 88, 0.28);
-        border-radius: 10px;
-        background: #fbfcfe;
-        color: var(--edu-muted);
-        padding: 0.8rem 0.9rem;
-        margin: 0.4rem 0;
-        font-size: 0.9rem;
-    }
-
-    .edu-course-card {
-        border: 1px solid var(--edu-border);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.05);
-        color: var(--edu-ink);
-        padding: 0.5rem 0.65rem;
-        margin: 0.35rem 0;
-        font-size: 0.88rem;
-        font-weight: 600;
-        overflow-wrap: anywhere;
-    }
-
     /* Lien d'ouverture d'un cours (nouvel onglet) dans la liste */
     .edu-course-link {
         display: block;
@@ -191,6 +154,12 @@ st.markdown(
     .edu-course-link:hover {
         background: rgba(255, 255, 255, 0.12);
     }
+
+    /*  FRAGILE : les sélecteurs `data-testid="st…"` ci-dessous dépendent des
+       INTERNES de Streamlit (non garantis stables entre versions). C'est le seul
+       moyen d'obtenir ce rendu épuré (uploader renommé, chat sans avatar, bulles
+       à droite). À REVALIDER à chaque montée de version de Streamlit ; la borne
+       `streamlit<2.0` de requirements.txt protège des cassures majeures. */
 
     /* Renomme le bouton par défaut de l'uploader en "Ajouter mes cours" */
     [data-testid="stFileUploaderDropzone"] button p { font-size: 0 !important; }
@@ -298,6 +267,20 @@ def save_uploaded_courses(uploaded_files) -> int:
     return saved
 
 
+def delete_course(name: str) -> None:
+    """
+    Supprime le fichier d'un cours de data/courses/. La désindexation (retrait de
+    ses chunks du vectorstore) et le nettoyage de la copie statique se font au
+    rerun suivant (sync incrémental via ensure_index_up_to_date + sync_static_courses).
+    """
+    path = COURSES_DIR / Path(name).name
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
+
+
 def courses_signature() -> frozenset:
     """Empreinte du dossier des cours (nom + date de modif) pour détecter un changement."""
     if not COURSES_DIR.exists():
@@ -311,20 +294,22 @@ def courses_signature() -> frozenset:
 
 def ensure_index_up_to_date() -> None:
     """
-    Auto-indexation : réindexe seulement si les cours ont changé depuis la
-    dernière indexation (ajout, modification ou retrait d'un fichier).
-    L'empreinte évite de réindexer inutilement à chaque rerun.
+    Auto-indexation INCRÉMENTALE : on synchronise le vectorstore avec le dossier
+    des cours. Chaque cours n'est vectorisé qu'une fois (à l'ajout) ; un cours
+    inchangé n'est jamais réindexé. L'empreinte de session évite même de lancer
+    le sync à chaque rerun ; quand il tourne, il ne fait que les différences.
     """
     signature = courses_signature()
     if st.session_state.get("indexed_signature") == signature:
         return
 
     with st.spinner("Indexation des cours…"):
-        result = index_all_courses()
+        result = sync_courses_index()
     st.session_state.indexed_signature = signature
 
-    if result["status"] == "success":
-        st.toast(f"{result['documents_indexed']} cours indexé(s).", icon="✅")
+    touched = len(result.get("added", [])) + len(result.get("updated", []))
+    if touched:
+        st.toast(f"{touched} cours indexé(s).", icon="✅")
     for err in result.get("errors", []):
         st.toast(err, icon="⚠️")
 
@@ -366,8 +351,36 @@ def load_conversations() -> dict | None:
     return None
 
 
+def prune_conversations() -> None:
+    """
+    Borne le nombre de discussions à MAX_CONVERSATIONS en supprimant les plus
+    anciennes (par dernière activité). Ne supprime jamais la discussion ouverte.
+    """
+    convs = st.session_state.conversations
+    if len(convs) <= MAX_CONVERSATIONS:
+        return
+
+    def activity(conv: dict) -> float:
+        return conv.get("updated_at") or conv.get("created_at") or 0.0
+
+    # Les plus récentes d'abord ; on garde le haut de la liste.
+    kept = sorted(convs, key=activity, reverse=True)[:MAX_CONVERSATIONS]
+
+    # Garantir la présence de la discussion ouverte même si elle tombe hors du top.
+    current_id = st.session_state.current_id
+    if current_id is not None and all(c["id"] != current_id for c in kept):
+        current = next((c for c in convs if c["id"] == current_id), None)
+        if current is not None:
+            kept = kept[: MAX_CONVERSATIONS - 1] + [current]
+
+    kept_ids = {c["id"] for c in kept}
+    # Filtrer la liste d'origine pour préserver l'ordre de création.
+    st.session_state.conversations = [c for c in convs if c["id"] in kept_ids]
+
+
 def save_conversations() -> None:
     """Sauvegarde les discussions sur disque (JSON), pour les retrouver plus tard."""
+    prune_conversations()  # borne la taille du fichier avant écriture
     data = {
         "conversations": st.session_state.conversations,
         "next_conv_id": st.session_state.next_conv_id,
@@ -412,11 +425,40 @@ def create_conversation() -> int:
     """Crée une discussion vierge et la rend active."""
     cid = st.session_state.next_conv_id
     st.session_state.next_conv_id += 1
+    now = time.time()
     st.session_state.conversations.append(
-        {"id": cid, "title": "Nouvelle discussion", "messages": []}
+        {
+            "id": cid,
+            "title": "Nouvelle discussion",
+            "messages": [],
+            "created_at": now,
+            "updated_at": now,
+        }
     )
     st.session_state.current_id = cid
     return cid
+
+
+def format_relative_time(ts: float | None) -> str:
+    """
+    Date lisible (relative) pour la liste des discussions. Permet de différencier
+    deux discussions qui portent le même titre (ex. « Bonjour ») par leur date,
+    sans avoir à dédoublonner les titres.
+    """
+    if not ts:
+        return ""
+    now = datetime.now()
+    moment = datetime.fromtimestamp(ts)
+    seconds = (now - moment).total_seconds()
+    if seconds < 60:
+        return "à l'instant"
+    if seconds < 3600:
+        return f"il y a {int(seconds // 60)} min"
+    if moment.date() == now.date():
+        return f"aujourd'hui {moment.strftime('%H:%M')}"
+    if moment.date() == (now - timedelta(days=1)).date():
+        return f"hier {moment.strftime('%H:%M')}"
+    return moment.strftime("%d/%m/%Y")
 
 
 def current_conversation() -> dict:
@@ -462,6 +504,7 @@ def submit_question(question: str) -> None:
     if not conv["messages"]:
         conv["title"] = make_title(cleaned)  # titre tiré de la 1re question
     conv["messages"].append({"role": "user", "content": cleaned})
+    conv["updated_at"] = time.time()  # dernière activité (affichée dans l'historique)
 
     # La question apparaît tout de suite dans le fil.
     with st.chat_message("user"):
@@ -472,7 +515,7 @@ def submit_question(question: str) -> None:
         with st.spinner("Le tuteur réfléchit…"):
             try:
                 result = answer_student_question_for_ui(
-                    cleaned, n_results=3, history=history
+                    cleaned, history=history
                 )
             except Exception:
                 result = None
@@ -507,12 +550,17 @@ def render_history() -> None:
     """
     st.markdown("### Discussions")
     listed = [c for c in st.session_state.conversations if c["messages"]]
+    # Tri par dernière activité décroissante : une discussion où l'on vient
+    # d'écrire (updated_at récent) remonte en haut, même si elle est ancienne.
+    listed.sort(
+        key=lambda c: c.get("updated_at") or c.get("created_at") or 0, reverse=True
+    )
 
     with st.container(key="conv_history"):
         if not listed:
             st.caption("Aucune discussion enregistrée pour le moment.")
             return
-        for conv in reversed(listed):  # plus récente en haut
+        for conv in listed:  # plus récente (dernière activité) en haut
             is_active = conv["id"] == st.session_state.current_id
             if st.button(
                 f"💬 {conv['title']}",
@@ -522,6 +570,10 @@ def render_history() -> None:
             ):
                 st.session_state.current_id = conv["id"]  # rouvrir + continuer
                 st.rerun()
+            # Date de dernière activité : distingue deux discussions de même titre.
+            stamp = format_relative_time(conv.get("updated_at") or conv.get("created_at"))
+            if stamp:
+                st.caption(stamp)
 
 
 def render_sidebar() -> None:
@@ -562,15 +614,49 @@ def render_sidebar() -> None:
             needle = (query or "").strip().lower()
             filtered = [c for c in courses if needle in c.lower()] if needle else courses
 
-            with st.container(height=200, key="course_list"):
+            with st.container(height=220, key="course_list"):
                 if not filtered:
                     st.caption("Aucun cours ne correspond.")
                 for name in filtered:
-                    st.markdown(
-                        f'<a class="edu-course-link" href="{course_url(name)}" '
-                        f'target="_blank" rel="noopener">📄 {html.escape(name)}</a>',
-                        unsafe_allow_html=True,
+                    if st.session_state.get("confirm_delete") == name:
+                        # Confirmation inline (clé par nom -> pas d'état résiduel).
+                        st.caption(f"Supprimer « {name} » ?")
+                        c_yes, c_no = st.columns(2)
+                        with c_yes:
+                            if st.button(
+                                "Oui, supprimer",
+                                key=f"confyes_{name}",
+                                type="primary",
+                                use_container_width=True,
+                            ):
+                                delete_course(name)
+                                st.session_state.confirm_delete = None
+                                st.toast(f"Cours supprimé : {name}", icon="🗑️")
+                                st.rerun()
+                        with c_no:
+                            if st.button(
+                                "Annuler", key=f"confno_{name}", use_container_width=True
+                            ):
+                                st.session_state.confirm_delete = None
+                                st.rerun()
+                        continue
+
+                    # Lien d'ouverture (clic) + bouton de suppression.
+                    col_link, col_del = st.columns(
+                        [0.82, 0.18], vertical_alignment="center"
                     )
+                    with col_link:
+                        st.markdown(
+                            f'<a class="edu-course-link" href="{course_url(name)}" '
+                            f'target="_blank" rel="noopener">📄 {html.escape(name)}</a>',
+                            unsafe_allow_html=True,
+                        )
+                    with col_del:
+                        if st.button(
+                            "🗑", key=f"ask_del_{name}", use_container_width=True
+                        ):
+                            st.session_state.confirm_delete = name
+                            st.rerun()
         else:
             st.caption("Aucun cours pour le moment.")
 

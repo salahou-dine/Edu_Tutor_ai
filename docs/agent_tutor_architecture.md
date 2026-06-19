@@ -40,10 +40,10 @@ retrouvé (plus petite = plus proche). Seuils dans `config/settings.py`.
    pédagogique générale et **dit clairement** que la réponse n'est pas fondée
    sur un cours indexé. Aucune indication de cours n'est montrée à l'étudiant.
 
-Seuils actuels (calibrés sur `data/courses/rag_intro.md`, embedding ChromaDB
-par défaut) : `course_grounded < 1.10`, `mixed < 1.30`, sinon `general_tutor`.
-Ces valeurs dépendent du modèle d'embedding et du corpus — à réajuster si l'un
-des deux change.
+Seuils actuels (embedding multilingue `paraphrase-multilingual-MiniLM-L12-v2`,
+distance **cosinus**, échelle [0, 2]) : `course_grounded < 0.45`, `mixed < 0.65`,
+sinon `general_tutor`. Ces valeurs dépendent du modèle d'embedding et du corpus —
+à réajuster si l'un des deux change.
 
 ## 4. RAG, Tools, Skill, Hermes : qui fait quoi
 
