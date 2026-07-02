@@ -6,7 +6,14 @@
 streamlit>=1.58.0,<2.0
 chromadb>=1.5.9
 sentence-transformers>=5.5.1   # embedding multilingue (tire torch + transformers)
-PyMuPDF>=1.27.2.3              # extraction de texte des PDF (fitz)
+PyMuPDF>=1.27.2.3              # extraction texte PDF + rendu des pages pour l'OCR
+python-docx>=1.2.0            # lecture Word (.docx)
+python-pptx>=1.0.2            # lecture PowerPoint (.pptx)
+pytesseract>=0.3.13          # OCR (wrapper) : PDF scannés + images
+pillow>=12.2.0               # images (OCR)
 
-# Dépendance EXTERNE (hors pip) : Hermes Agent — le binaire CLI `hermes` doit être
-# installé et configuré (modèle/provider, skill education-tutor dans ~/.hermes/skills).
+# Dépendances EXTERNES (hors pip) :
+# - Hermes Agent : binaire CLI `hermes` installé/configuré (modèle/provider,
+#   skills education-* dans ~/.hermes/skills).
+# - Tesseract OCR (moteur système) pour pytesseract :
+#     sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng

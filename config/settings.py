@@ -18,8 +18,24 @@ COURSES_DIR = DATA_DIR / "courses"        # cours actifs (indexés)
 SAMPLES_DIR = DATA_DIR / "samples"        # exemples développeur (non indexés)
 VECTORSTORE_PATH = DATA_DIR / "vectorstore"
 
-# Formats de cours acceptés pour le MVP (.pdf si PyMuPDF est installé).
-SUPPORTED_EXTENSIONS = (".md", ".txt", ".pdf")
+# Multi-agents : artefacts documentaires (IDP) et contenus générés (agent contenu).
+# Cachés sur disque, indexés par doc_id (hash de contenu). Voir agents/document_store.py.
+ARTIFACTS_DIR = DATA_DIR / "artifacts"
+GENERATED_DIR = DATA_DIR / "generated"
+# Version du schéma DocumentArtifact : un bump invalide les artefacts en cache.
+# v2 : le texte des sections est désormais stocké dans l'artefact (contrat complet).
+ARTIFACT_SCHEMA_VERSION = 2
+
+# Formats de cours acceptés : texte, PDF, Word, PowerPoint, et images (OCR).
+SUPPORTED_EXTENSIONS = (
+    ".md", ".txt", ".pdf",
+    ".docx", ".pptx",
+    ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp",
+)
+
+# OCR (Tesseract) : langues et résolution de rendu des pages PDF scannées.
+OCR_LANG = os.getenv("OCR_LANG", "fra+eng")
+OCR_DPI = int(os.getenv("OCR_DPI", "200"))
 
 # Prompt sauvegardé pour le fallback manuel (quand Hermes n'est pas appelable).
 LAST_PROMPT_PATH = DATA_DIR / "last_tutor_prompt.md"

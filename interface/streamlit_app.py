@@ -36,12 +36,12 @@ if str(PROJECT_ROOT) not in sys.path:
 # Les chemins (vectorstore, cours, conversations…) sont tous dérivés de la racine
 # du projet dans config.settings : pas besoin de changer le répertoire courant.
 
-from agents.tutor_agent import answer_student_question_for_ui
+from agents import orchestrator
 from rag.indexer import sync_courses_index
 
 
 COURSES_DIR = PROJECT_ROOT / "data" / "courses"
-UPLOAD_TYPES = ["md", "txt", "pdf"]
+UPLOAD_TYPES = ["md", "txt", "pdf", "docx", "pptx", "png", "jpg", "jpeg", "tiff", "bmp", "webp"]
 
 # Les cours sont recopiés ici pour être servis par Streamlit (fichiers statiques)
 # et ainsi ouvrables dans un nouvel onglet du navigateur.
@@ -74,6 +74,9 @@ MODE_INFO = {
     "general_tutor": ("Réponse générale", "general"),
     "clarify": ("Quel cours ?", "mixed"),
     "course_summary": ("Résumé du cours", "course"),
+    "idp": ("Analyse du document", "mixed"),
+    "content": ("Ressource d'étude", "course"),
+    "analyze": ("Analyse + résumé", "course"),
 }
 
 ERROR_MESSAGE = (
@@ -484,60 +487,58 @@ def start_new_discussion() -> None:
         create_conversation()
 
 
-def submit_question(question: str) -> None:
-    """
-    Traite une question dans la discussion ACTIVE.
+def _add_user_turn(conv: dict, label: str) -> list[dict]:
+    """Ajoute le tour étudiant au fil et l'affiche ; retourne l'historique AVANT lui."""
+    history = [{"role": m["role"], "content": m["content"]} for m in conv["messages"]]
+    if not conv["messages"]:
+        conv["title"] = make_title(label)
+    conv["messages"].append({"role": "user", "content": label})
+    conv["updated_at"] = time.time()
+    with st.chat_message("user"):
+        st.markdown(label)
+    return history
 
-    Affiche la question IMMÉDIATEMENT dans le fil, puis construit la réponse
-    sous l'indicateur d'attente (façon Claude/ChatGPT). Pas de rerun : les deux
-    messages sont rendus en ligne et persistés dans l'état.
-    """
+
+def _store_assistant(conv: dict, result: dict | None) -> None:
+    """Construit, rend et persiste la réponse du tuteur depuis un résultat orchestrateur."""
+    if not result or result.get("status") == "error":
+        message = {
+            "role": "assistant",
+            "status": "error",
+            "content": (result or {}).get("answer") or ERROR_MESSAGE,
+        }
+    else:
+        # Badge : pour le tuteur, on garde le mode pédagogique fin ; sinon le kind.
+        kind = result.get("kind", "tutor")
+        mode = (result.get("payload") or {}).get("mode") if kind == "tutor" else kind
+        message = {
+            "role": "assistant",
+            "status": "success",
+            "content": result.get("answer", ""),
+            "mode": mode or "general_tutor",
+        }
+    render_assistant_message(message)
+    conv["messages"].append(message)
+
+
+def submit_question(question: str) -> None:
+    """Traite une demande en langage naturel via l'orchestrateur multi-agents."""
     cleaned = (question or "").strip()
     if not cleaned:
         return
-
     conv = current_conversation()
-    # Historique AVANT d'ajouter la nouvelle question (contexte des échanges).
-    history = [
-        {"role": m["role"], "content": m["content"]} for m in conv["messages"]
-    ]
-    if not conv["messages"]:
-        conv["title"] = make_title(cleaned)  # titre tiré de la 1re question
-    conv["messages"].append({"role": "user", "content": cleaned})
-    conv["updated_at"] = time.time()  # dernière activité (affichée dans l'historique)
-
-    # La question apparaît tout de suite dans le fil.
-    with st.chat_message("user"):
-        st.markdown(cleaned)
-
-    # La réponse se construit sous la question, avec l'indicateur d'attente.
+    history = _add_user_turn(conv, cleaned)
     with st.chat_message("assistant"):
         with st.spinner("Le tuteur réfléchit…"):
             try:
-                result = answer_student_question_for_ui(
-                    cleaned, history=history
+                result = orchestrator.handle(
+                    cleaned,
+                    history=history,
+                    selected_doc=st.session_state.get("selected_doc"),
                 )
             except Exception:
                 result = None
-
-        if not result or result.get("status") != "success":
-            message = {
-                "role": "assistant",
-                "status": (result or {}).get("status", "error"),
-                "content": ERROR_MESSAGE,
-            }
-        else:
-            message = {
-                "role": "assistant",
-                "status": "success",
-                "content": result["student_answer"],
-                "mode": result["mode"],
-                "course_indications": result["course_indications"],
-                "verification_question": result["verification_question"],
-            }
-        render_assistant_message(message)
-
-    conv["messages"].append(message)
+        _store_assistant(conv, result)
 
 
 # --- Sidebar ----------------------------------------------------------------

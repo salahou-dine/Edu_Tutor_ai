@@ -2,12 +2,51 @@
   "conversations": [
     {
       "id": 0,
-      "title": "Nouvelle discussion",
-      "messages": [],
+      "title": "bonjour",
+      "messages": [
+        {
+          "role": "user",
+          "content": "bonjour"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Bonjour ! Je suis EduTutor, ton tuteur académique. Je suis là pour t'aider à comprendre les cours, à résoudre des exercices, à chercher des informations et à produire des supports d'apprentissage. Je peux t'expliquer des concepts, te donner des exemples concrets et vérifier que tu as bien compris une notion.\n\nQue puis-je faire pour toi aujourd'hui ? N'hésite pas à me poser une question sur ton cours de cybersécurité OT, ou sur tout autre sujet que tu souhaites approfondir.",
+          "mode": "mixed"
+        }
+      ],
       "created_at": 1781881852.0918078,
-      "updated_at": 1781881852.0918078
+      "updated_at": 1782385045.7593973
+    },
+    {
+      "id": 1,
+      "title": "Qui est tu ?",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Qui est tu ?"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Bonjour ! Je suis EduTutor, ton tuteur académique. Je suis là pour t'accompagner dans ton apprentissage : je peux t'aider à comprendre des notions de cours, t'aider à résoudre des exercices, chercher des informations pertinentes pour tes études, et même produire supports visuels si c'est utile à ton travail (schéama, illustration, etc.).\n\nJe n'ai accès à aucun cours indexé en ce moment, donc si tu as des questions sur des notions précises, n'hésite pas à me les poser tout de même : je pourrai répondre sur la base de connaissances générales établies, ou t'aider à travailler autrement. Que puis-je faire pour toi ?",
+          "mode": "general_tutor"
+        },
+        {
+          "role": "user",
+          "content": "c'est quoi la conductivité ?"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Bonjour ! Je vais t'expliquer ce qu'est la conductivité.\n\n**Précision importante :** je n'ai accès à aucun cours indexé pour cette question, donc ma réponse s'appuie sur des connaissances générales en physique/chimie.\n\n---\n\n**La conductivité**, c'est la capacité d'un matériau à laisser circuler quelque chose à travers lui. Le terme s'utilise principalement dans deux contextes :\n\n**1. Conductivité électrique** — C'est la capacité d'un matériau à laisser passer le courant électrique. Les métaux (cuivre, aluminium) sont de bons conducteurs ; le caoutchouc ou le verre sont des isolants. L'unité est le siemens par mètre (S/m).\n\n**2. Conductivité thermique** — C'est la capacité d'un matériau à transmettre la chaleur. Par exemple, les métaux conduisent bien la chaleur (on le sent quand on touche une cuillère en métal chaude), tandis que la laine ou le bois sont de bons isolants thermiques. L'unité est le watt par mètre-kelvin (W/(m·K)).\n\nDans les deux cas, c'est l'inverse de la **résistivité** (ou résistance thermique) : un bon conducteur a une faible résistance au passage du courant ou de la chaleur.\n\n---\n\nTu veux que j'approfondisse l'un des deux types, ou que je t'explique un exemple concret ?",
+          "mode": "general_tutor"
+        }
+      ],
+      "created_at": 1782385929.4951124,
+      "updated_at": 1782741430.5059192
     }
   ],
-  "next_conv_id": 1,
-  "current_id": 0
+  "next_conv_id": 2,
+  "current_id": 1
 }

@@ -191,9 +191,13 @@ def _segments_from_pdf(path: Path) -> list[dict]:
 
     all_lines = [pl["text"] for _, pls in pages for pl in pls]
     if not all_lines:
+        # PDF sans texte (scanné) : on tente l'OCR page par page.
+        ocr_pages = _ocr_pdf_pages(path)
+        if ocr_pages:
+            return _segments_from_pages(ocr_pages)
         raise ValueError(
             f"Aucun texte extractible dans le PDF « {path.name} » "
-            "(probablement un PDF scanné ; l'OCR n'est pas géré pour l'instant)."
+            "(probablement un PDF scanné ; l'OCR a échoué ou est indisponible)."
         )
 
     # Taille « corps » = taille de police la plus fréquente.
@@ -258,14 +262,191 @@ def _segments_from_pdf(path: Path) -> list[dict]:
     return segments
 
 
+def _segments_from_pages(pages: list[tuple[int, str]]) -> list[dict]:
+    """
+    Segmente du texte PAGINÉ (issu de l'OCR) par titres détectés, en gardant la
+    page. Pas d'info de police (texte brut) : on s'appuie sur la numérotation, la
+    typographie et le markdown via `_looks_like_heading`.
+    """
+    segments: list[dict] = []
+    current_heading: str | None = None
+    current_page = 1
+    body: list[str] = []
+
+    def flush() -> None:
+        joined = "\n".join(body).strip()
+        if joined:
+            segments.append({"text": joined, "heading": current_heading, "page": current_page})
+
+    for pno, text in pages:
+        for line in text.splitlines():
+            if _looks_like_heading(line):
+                flush()
+                body = []
+                current_heading = _heading_text(line)
+                current_page = pno
+            else:
+                if not body:
+                    current_page = pno
+                body.append(line)
+    flush()
+    return segments
+
+
+# --- OCR (Tesseract) --------------------------------------------------------
+
+def _ocr_image_to_text(image) -> str:
+    """OCR d'une image PIL → texte (langues configurées). Vide si rien détecté."""
+    import pytesseract
+
+    return pytesseract.image_to_string(image, lang=settings.OCR_LANG).strip()
+
+
+def _ocr_pdf_pages(path: Path) -> list[tuple[int, str]]:
+    """Rend chaque page PDF en image puis l'OCR. Retourne [(page, texte), ...]."""
+    try:
+        import io
+
+        import fitz  # PyMuPDF
+        from PIL import Image
+    except ImportError:
+        return []
+
+    pages: list[tuple[int, str]] = []
+    try:
+        with fitz.open(path) as document:
+            for pno in range(document.page_count):
+                pixmap = document[pno].get_pixmap(dpi=settings.OCR_DPI)
+                with Image.open(io.BytesIO(pixmap.tobytes("png"))) as image:
+                    text = _ocr_image_to_text(image)
+                if text:
+                    pages.append((pno + 1, text))
+    except Exception:
+        return []
+    return pages
+
+
+def _segments_from_image(path: Path) -> list[dict]:
+    """OCR d'un fichier image → un segment (le texte lu). Pas de compréhension visuelle."""
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError(
+            "Lecture d'image indisponible : Pillow n'est pas installé "
+            "(`pip install pillow pytesseract`)."
+        ) from exc
+
+    with Image.open(path) as image:
+        text = _ocr_image_to_text(image)
+    if not text:
+        # Image sans texte lisible (photo/diagramme) : on ne devine pas le visuel.
+        raise ValueError(
+            f"Aucun texte détecté par OCR dans l'image « {path.name} » "
+            "(la compréhension visuelle d'un schéma nécessite un modèle de vision)."
+        )
+    return [{"text": text, "heading": None, "page": 1}]
+
+
+# --- Word (.docx) -----------------------------------------------------------
+
+def _segments_from_docx(path: Path) -> list[dict]:
+    """Segmente un .docx : titres par style (« Heading »/« Titre »), corps, tableaux."""
+    try:
+        import docx
+    except ImportError as exc:
+        raise RuntimeError(
+            "Lecture Word indisponible : python-docx n'est pas installé "
+            "(`pip install python-docx`)."
+        ) from exc
+
+    document = docx.Document(str(path))
+    segments: list[dict] = []
+    current_heading: str | None = None
+    body: list[str] = []
+
+    def flush() -> None:
+        joined = "\n".join(body).strip()
+        if joined:
+            segments.append({"text": joined, "heading": current_heading, "page": None})
+
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if not text:
+            continue
+        style = (paragraph.style.name or "").lower() if paragraph.style else ""
+        is_style_heading = style.startswith("heading") or style.startswith("titre") or style in ("title", "subtitle")
+        if is_style_heading or _looks_like_heading(text):
+            flush()
+            body = []
+            current_heading = _clean_heading(text)
+        else:
+            body.append(text)
+    flush()
+
+    # Tableaux (ordre non garanti par python-docx) : regroupés en fin de document.
+    table_lines: list[str] = []
+    for table in document.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                table_lines.append(" | ".join(cells))
+    if table_lines:
+        segments.append({"text": "\n".join(table_lines), "heading": "Tableaux", "page": None})
+
+    if not segments:
+        raise ValueError(f"Aucun texte exploitable dans le document « {path.name} ».")
+    return segments
+
+
+# --- PowerPoint (.pptx) -----------------------------------------------------
+
+def _segments_from_pptx(path: Path) -> list[dict]:
+    """Segmente un .pptx : 1 diapo = 1 section (titre = en-tête, n° de diapo = page)."""
+    try:
+        from pptx import Presentation
+    except ImportError as exc:
+        raise RuntimeError(
+            "Lecture PowerPoint indisponible : python-pptx n'est pas installé "
+            "(`pip install python-pptx`)."
+        ) from exc
+
+    presentation = Presentation(str(path))
+    segments: list[dict] = []
+    for index, slide in enumerate(presentation.slides, start=1):
+        title_shape = slide.shapes.title
+        heading = _clean_heading(title_shape.text) if title_shape and title_shape.text.strip() else None
+        # Identité stable : python-pptx recrée des wrappers, donc `is` n'est pas
+        # fiable pour reconnaître le titre -> on compare par shape_id.
+        title_id = title_shape.shape_id if title_shape else None
+        lines: list[str] = []
+        for shape in slide.shapes:
+            if shape.shape_id == title_id or not shape.has_text_frame:
+                continue
+            text = shape.text_frame.text.strip()
+            if text:
+                lines.append(text)
+        body = "\n".join(lines).strip()
+        if heading or body:
+            segments.append({"text": body, "heading": heading, "page": index})
+
+    if not segments:
+        raise ValueError(f"Aucun texte exploitable dans la présentation « {path.name} ».")
+    return segments
+
+
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp")
+
+
 def load_document_segments(file_path: str) -> list[dict]:
     """
     Retourne les segments structurés d'un document : `{"text", "heading", "page"}`.
 
+    Formats : .md/.txt, .pdf (texte ou OCR si scanné), .docx, .pptx, images (OCR).
+
     Lève :
     - FileNotFoundError si le fichier n'existe pas ;
-    - ValueError si l'extension n'est pas supportée ou le PDF est vide ;
-    - RuntimeError si PyMuPDF manque pour un PDF.
+    - ValueError si l'extension n'est pas supportée ou si rien d'exploitable ;
+    - RuntimeError si une dépendance d'extraction manque.
     """
     path = Path(file_path)
     if not path.exists():
@@ -276,8 +457,14 @@ def load_document_segments(file_path: str) -> list[dict]:
         return _segments_from_text(_load_text_file(path))
     if suffix == ".pdf":
         return _segments_from_pdf(path)
+    if suffix == ".docx":
+        return _segments_from_docx(path)
+    if suffix == ".pptx":
+        return _segments_from_pptx(path)
+    if suffix in _IMAGE_SUFFIXES:
+        return _segments_from_image(path)
 
     raise ValueError(
         f"Format non supporté : « {suffix or path.name} ». "
-        "Formats acceptés : .md, .txt, .pdf."
+        "Formats acceptés : .md, .txt, .pdf, .docx, .pptx, images (.png/.jpg/…)."
     )
