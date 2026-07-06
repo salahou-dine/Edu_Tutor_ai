@@ -8,11 +8,34 @@ l'agent de contenu est déjà du Markdown pédagogique : elle n'a pas besoin d'�
 re-présentée.
 """
 
+import re
+
 _DOC_TYPE_LABEL = {
     "course": "Support de cours",
     "instructions": "Consigne / devoir",
     "unknown": "Document",
 }
+
+# Les identifiants de section (s1, s12…) sont INTERNES : ils ne doivent jamais
+# apparaître côté étudiant. Hermes peut malgré tout les glisser dans les
+# `warnings`/textes de l'analyse ; on les retire ici (garantie côté Python).
+_SECTION_ID_RE = re.compile(
+    r"\(?\s*\bs\d+\b(?:\s*(?:,|;|à|a|et|–|-|to)\s*\bs\d+\b)*\s*\)?",
+    re.IGNORECASE,
+)
+
+
+def _strip_section_ids(text: str) -> str:
+    # 1) une parenthèse entière qui parle de section_id disparait
+    #    (« (s11, s12) », « (contenu de s22 redondant avec s23) »).
+    text = re.sub(r"\([^)]*\bs\d+\b[^)]*\)", " ", text)
+    # 2) les runs de section_id restants (« s19 à s25 ») -> espace (pas de mots collés).
+    text = _SECTION_ID_RE.sub(" ", text)
+    text = re.sub(r"\(\s*[,;]*\s*\)", "", text)   # parenthèses vidées
+    text = re.sub(r"\s+([.,;:)])", r"\1", text)   # espace avant ponctuation
+    text = re.sub(r"\(\s+", "(", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
 
 
 def present_artifact(artifact) -> str:
@@ -48,7 +71,8 @@ def present_artifact(artifact) -> str:
             term = d.get("term")
             if not term:
                 continue
-            definition = d.get("definition")
+            term = _strip_section_ids(str(term))
+            definition = _strip_section_ids(str(d.get("definition") or ""))
             lines.append(f"- **{term}**" + (f" : {definition}" if definition else ""))
 
     _section(lines, "Consignes", [i.get("text") for i in analysis.get("instructions", [])])
@@ -58,7 +82,10 @@ def present_artifact(artifact) -> str:
     if extraction.extraction_quality == "low_structure":
         warnings = list(warnings) + ["La structure de ce document est peu nette : l'analyse peut être incomplète."]
     if warnings:
-        lines.append("\n> ⚠️ " + " ".join(str(w) for w in warnings[:3]))
+        cleaned = [_strip_section_ids(str(w)) for w in warnings[:3]]
+        cleaned = [w for w in cleaned if w]
+        if cleaned:
+            lines.append("\n> ⚠️ " + " ".join(cleaned))
 
     if not analysis:
         lines.append(
@@ -68,7 +95,8 @@ def present_artifact(artifact) -> str:
 
 
 def _section(lines: list[str], title: str, items: list, limit: int = 12) -> None:
-    cleaned = [str(i) for i in items if i]
+    cleaned = [_strip_section_ids(str(i)) for i in items if i]
+    cleaned = [c for c in cleaned if c]
     if not cleaned:
         return
     lines.append(f"\n**{title}**")
