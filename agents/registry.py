@@ -55,6 +55,18 @@ CAPABILITIES: dict[str, Capability] = {
         outputs=("generated",),
         preconditions=("artifact",),  # nécessite un artefact IDP existant
     ),
+    "compose": Capability(
+        name="compose",
+        description=(
+            "Rédige un document ORIGINAL et structuré (rapport, exposé, dissertation, "
+            "note, synthèse, lettre…) à partir d'une consigne en langage naturel. "
+            "N'exige aucun document source ; peut s'appuyer sur un cours si l'étudiant "
+            "en nomme un, sinon mobilise des connaissances générales. Sortie Markdown."
+        ),
+        inputs=("instructions",),
+        outputs=("generated",),
+        # PAS de précondition : c'est un générateur, pas un transformateur de source.
+    ),
 }
 
 

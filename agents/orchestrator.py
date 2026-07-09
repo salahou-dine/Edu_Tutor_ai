@@ -32,6 +32,7 @@ from agents.common import extract_json
 from agents.presenter import present_artifact
 from agents.idp_agent import analyze_document
 from agents.content_agent import generate_content
+from agents.compose_agent import generate_document
 from agents.tutor_agent import answer_student_question_for_ui
 from services.hermes_adapter import ask_hermes_with_skill
 
@@ -143,6 +144,17 @@ _RE_SUMMARY = re.compile(
     re.IGNORECASE,
 )
 _RE_EXPLAIN = re.compile(r"\b(explique|expliquer|d[ée]taille|reformule|clarifie)\b", re.IGNORECASE)
+# Rédaction d'un document original : un VERBE d'écriture + un TYPE de document.
+# (le verbe est exigé pour ne pas capter « résume le document » -> résumé.)
+_RE_COMPOSE = re.compile(
+    r"\b(écri[st]|ecri[st]|écrire|ecrire|r[ée]dige[rz]?|r[ée]daction|"
+    r"compose[rz]?|r[ée]dact|produi[st]|prépare[rz]?|prepare[rz]?|fais|génère[rz]?|genere[rz]?)\b"
+    r".{0,40}?"
+    r"\b(document|rapport|expos[ée]|dissertation|essai|article|lettre|m[ée]mo|"
+    r"note de synth[èe]se|synth[èe]se écrite|texte|billet|compte[- ]rendu|"
+    r"pr[ée]sentation écrite|plan détaillé)\b",
+    re.IGNORECASE,
+)
 _RE_SECTION_WORD = re.compile(r"\b(section|chapitre|partie|paragraphe|diapo)\b", re.IGNORECASE)
 _RE_SECTION_REF = re.compile(
     r"\b(?:sur|section|chapitre|partie|paragraphe|concernant|à propos de|du th[èe]me)\s+(.+)$",
@@ -176,6 +188,16 @@ def _classify_to_plan(question: str, documents: list[dict], selected: str | None
     ql = question.lower()
     doc = _target_doc(question, documents, selected)
     doc_needed_but_missing = doc is None and len(documents) >= 1
+
+    # 0) Rédaction d'un document original -> agent compose (source OPTIONNELLE).
+    #    On n'ancre QUE si un cours est explicitement NOMMÉ (_match_doc), jamais
+    #    par défaut : compose doit pouvoir générer librement.
+    if _RE_COMPOSE.search(ql):
+        step = {"agent": "compose", "instructions": question}
+        named = _match_doc(question, documents)
+        if named is not None:
+            step["doc"] = named
+        return {"intent": "compose", "steps": [step]}
 
     # 1) Analyse complète d'un document -> IDP puis Content (résumé).
     if _RE_ANALYZE.search(ql):
@@ -283,9 +305,38 @@ def _run_content(step: dict) -> dict:
             headings = [u["heading"] for u in used if u.get("heading")][:6]
             if headings:
                 answer += "\n\n*Parties utilisées : " + " · ".join(headings) + "*"
-        return {"status": "success", "kind": "content", "answer": answer, "doc": doc["filename"]}
+        return {"status": "success", "kind": "content", "answer": answer,
+                "doc": doc["filename"], "content_type": content_type, "markdown": answer}
     return {"status": "error", "kind": "content",
             "answer": result.get("message") or _GENERIC_ERROR, "doc": doc["filename"]}
+
+
+def _compose_grounding(doc: dict) -> str | None:
+    """Contexte d'ancrage pour compose : texte condensé du cours NOMMÉ, s'il est
+    déjà analysé (compose n'a pas de précondition -> on n'analyse pas à la volée)."""
+    artifact = load_artifact(doc["doc_id"])
+    if artifact is None or not artifact.extraction.sections:
+        return None
+    parts = []
+    for section in artifact.extraction.sections:
+        body = (section.text or "")[:400]
+        parts.append(f"{section.heading or ''}\n{body}".strip())
+    context = "\n\n".join(p for p in parts if p)
+    return context[:_SECTION_CONTEXT_MAX] or None
+
+
+def _run_compose(step: dict) -> dict:
+    doc = step.get("doc")
+    course_context = _compose_grounding(doc) if doc is not None else None
+    result = generate_document(step.get("instructions", ""), course_context=course_context)
+    if result["status"] == "success":
+        return {"status": "success", "kind": "compose", "answer": result["content"],
+                "doc": doc["filename"] if doc else None,
+                "content_type": "document", "markdown": result["content"],
+                "title": result.get("title")}
+    return {"status": "error", "kind": "compose",
+            "answer": result.get("message") or _GENERIC_ERROR,
+            "doc": doc["filename"] if doc else None}
 
 
 def _run_tutor(question: str, history, doc: dict | None = None, sections=None) -> dict:
@@ -326,32 +377,97 @@ def _execute_all(steps: list[dict], question: str, history) -> list[dict]:
             results.append(_run_idp(step["doc"]))
         elif step["agent"] == "content":
             results.append(_run_content(step))
+        elif step["agent"] == "compose":
+            results.append(_run_compose(step))
     return results
 
 
 # --- Composition de la réponse finale (unique, sans jargon) -----------------
 
+_DELIVERABLE_TITLES = {"summary": "Résumé", "revision": "Fiche de révision"}
+
+
+def _build_deliverable(result: dict) -> dict:
+    """Objet livrable structuré (rendu en carte + téléchargeable) depuis un résultat
+    d'agent producteur (content : résumé/fiche ; compose : document original)."""
+    ctype = result.get("content_type") or "summary"
+    markdown = result.get("markdown") or result.get("answer") or ""
+    if ctype == "document":
+        return {
+            "type": "document",
+            "title": result.get("title") or "Document",
+            "doc": result.get("doc") or "",
+            "markdown": markdown,
+        }
+    doc = result.get("doc") or ""
+    stem = doc.rsplit(".", 1)[0]
+    label = _DELIVERABLE_TITLES.get(ctype, "Ressource d'étude")
+    return {
+        "type": ctype,
+        "title": f"{label} — {stem}" if stem else label,
+        "doc": doc,
+        "markdown": markdown,
+    }
+
+
+def _deliverable_lead(deliverable: dict) -> str:
+    """Courte phrase d'intro dans le chat (le contenu complet vit dans la carte)."""
+    if deliverable["type"] == "revision":
+        return "Voici ta fiche de révision 👇"
+    if deliverable["type"] == "document":
+        return "Voici ton document 👇"
+    return "Voici le résumé 👇"
+
+
 def _compose(intent: str, results: list[dict]) -> dict:
-    """Assemble UNE réponse étudiant à partir des résultats des étapes."""
+    """Assemble UNE réponse étudiant à partir des résultats des étapes.
+
+    Quand une ressource d'étude est produite (agent content), elle est renvoyée
+    comme LIVRABLE structuré (`deliverable`) rendu en carte, et le texte du chat
+    devient une courte intro — évite de dupliquer le contenu dans la bulle.
+    """
     if not results:
         return {"status": "error", "kind": intent, "answer": _GENERIC_ERROR, "doc": None}
 
     by_kind = {r["kind"]: r for r in results}
+    content = by_kind.get("content")
+    composed = by_kind.get("compose")
+    # Agent producteur du livrable : content (résumé/fiche) ou compose (document).
+    producer = (content if content and content["status"] == "success"
+                else composed if composed and composed["status"] == "success" else None)
+    deliverable = _build_deliverable(producer) if producer else None
+
+    # Rédaction d'un document original -> carte « document » + intro courte.
+    if intent in ("compose", "planner") and composed is not None:
+        if deliverable:
+            return {"status": "success", "kind": "compose",
+                    "answer": _deliverable_lead(deliverable),
+                    "doc": composed.get("doc"), "deliverable": deliverable}
+        return composed  # échec compose -> remonter l'erreur
 
     if intent == "analyze":
-        idp, content = by_kind.get("idp"), by_kind.get("content")
+        idp = by_kind.get("idp")
         parts, doc = [], None
         if idp and idp["status"] == "success":
             parts.append(idp["answer"]); doc = idp["doc"]
-        if content and content["status"] == "success":
-            parts.append("## Résumé\n\n" + content["answer"]); doc = doc or content["doc"]
+        if deliverable:
+            doc = doc or content["doc"]
+            parts.append("Et voici le résumé de ce cours 👇")
+            return {"status": "success", "kind": "analyze",
+                    "answer": "\n\n---\n\n".join(parts), "doc": doc, "deliverable": deliverable}
         if parts:
             return {"status": "success", "kind": "analyze",
                     "answer": "\n\n---\n\n".join(parts), "doc": doc}
         # tout a échoué -> remonter la 1re erreur
         return next((r for r in results if r["status"] != "success"), results[-1])
 
-    # summary / revision / question / explain_section -> dernière étape pertinente
+    # summary / revision -> livrable en carte + intro courte
+    if deliverable:
+        return {"status": "success", "kind": content["kind"],
+                "answer": _deliverable_lead(deliverable), "doc": content["doc"],
+                "deliverable": deliverable}
+
+    # question / explain_section / échec content -> dernière étape pertinente
     return results[-1]
 
 
@@ -392,6 +508,13 @@ def _plan_with_llm(question, history, documents, selected) -> dict | None:
     for s in raw.get("steps") or []:
         agent = s.get("agent")
         if agent not in CAPABILITIES:
+            continue
+        if agent == "compose":
+            # Rédaction : consigne = demande de l'étudiant ; doc = ancrage OPTIONNEL
+            # (jamais de clarify si absent -> compose peut générer librement).
+            named = _match_doc(str(s.get("doc") or ""), documents) if s.get("doc") else None
+            steps.append({"agent": "compose", "instructions": question, "doc": named,
+                          "content_type": None, "sections": None})
             continue
         doc = None
         if agent in ("idp", "content"):

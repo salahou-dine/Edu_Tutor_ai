@@ -37,7 +37,16 @@ if str(PROJECT_ROOT) not in sys.path:
 # du projet dans config.settings : pas besoin de changer le répertoire courant.
 
 from agents import orchestrator
+from interface.exporters import (
+    PDF_AVAILABLE,
+    safe_filename,
+    to_docx_bytes,
+    to_markdown_bytes,
+    to_pdf_bytes,
+)
 from rag.indexer import sync_courses_index
+
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 COURSES_DIR = PROJECT_ROOT / "data" / "courses"
@@ -85,9 +94,13 @@ AGENT_INFO = {
     "tutor":       ("🎓", "Tuteur"),
     "idp":         ("🔎", "Analyse (IDP)"),
     "content":     ("📝", "Contenu"),
+    "compose":     ("✍️", "Rédaction"),
     "clarify":     ("❓", "Clarification"),
     "no_document": ("📂", "Aucun document"),
 }
+
+# Icône par type de livrable (résumé / fiche de révision / document rédigé).
+DELIVERABLE_ICON = {"summary": "📄", "revision": "🎴", "document": "📝"}
 
 ERROR_MESSAGE = (
     "Le tuteur n'a pas pu générer une réponse pour le moment. "
@@ -176,6 +189,13 @@ st.markdown(
         border: 1px solid #e0e4ea;
     }
     .edu-agents .edu-agent-arrow { color: #b3b9c2; font-size: 0.8rem; }
+
+    /* En-tête de la carte livrable (façon Artifact) */
+    .edu-deliverable-head {
+        font-size: 1.02rem;
+        margin: 0.1rem 0 0.5rem;
+        color: var(--edu-ink);
+    }
 
     /* Lien d'ouverture d'un cours (nouvel onglet) dans la liste */
     .edu-course-link {
@@ -384,7 +404,66 @@ def render_agents(agents: list[str]) -> None:
     )
 
 
-def render_assistant_message(message: dict) -> None:
+def _deliverable_downloads(deliverable: dict, seed: str, short: bool = False) -> None:
+    """Boutons de téléchargement d'un livrable (.docx, .md, et .pdf si disponible).
+
+    `short` = libellés courts (pour la carte, plus étroite) ; le PDF n'apparaît
+    que si les dépendances sont installées (PDF_AVAILABLE).
+    """
+    md = deliverable.get("markdown", "")
+    title = deliverable.get("title", "livrable")
+    labels = (("⬇️ .docx", "⬇️ .md", "⬇️ .pdf") if short
+              else ("⬇️ Word (.docx)", "⬇️ Markdown (.md)", "⬇️ PDF (.pdf)"))
+    cols = st.columns(3 if PDF_AVAILABLE else 2)
+    with cols[0]:
+        st.download_button(
+            labels[0], data=to_docx_bytes(md, title),
+            file_name=safe_filename(title, "docx"), mime=_DOCX_MIME,
+            key=f"docx_{seed}", use_container_width=True,
+        )
+    with cols[1]:
+        st.download_button(
+            labels[1], data=to_markdown_bytes(md),
+            file_name=safe_filename(title, "md"), mime="text/markdown",
+            key=f"md_{seed}", use_container_width=True,
+        )
+    if PDF_AVAILABLE:
+        with cols[2]:
+            st.download_button(
+                labels[2], data=to_pdf_bytes(md, title),
+                file_name=safe_filename(title, "pdf"), mime="application/pdf",
+                key=f"pdf_{seed}", use_container_width=True,
+            )
+
+
+@st.dialog("Livrable", width="large")
+def _deliverable_dialog(deliverable: dict, seed: str) -> None:
+    """Vue plein format (modal) d'un livrable : titre + contenu + téléchargements."""
+    icon = DELIVERABLE_ICON.get(deliverable.get("type"), "📄")
+    st.markdown(f"### {icon} {deliverable.get('title', 'Livrable')}")
+    st.markdown(deliverable.get("markdown", ""))
+    st.divider()
+    _deliverable_downloads(deliverable, f"dlg_{seed}")
+
+
+def render_deliverable(deliverable: dict, seed: str) -> None:
+    """Carte livrable dans le chat (façon Artifact) : en-tête + aperçu défilant + actions."""
+    icon = DELIVERABLE_ICON.get(deliverable.get("type"), "📄")
+    title = html.escape(deliverable.get("title", "Livrable"))
+    with st.container(border=True):
+        st.markdown(
+            f"<div class='edu-deliverable-head'>{icon} <b>{title}</b></div>",
+            unsafe_allow_html=True,
+        )
+        # Conteneur à hauteur fixe : le contenu défile dans la carte (façon Artifact).
+        with st.container(height=340):
+            st.markdown(deliverable.get("markdown", ""))
+        if st.button("⤢ Agrandir", key=f"exp_{seed}", use_container_width=True):
+            _deliverable_dialog(deliverable, seed)
+        _deliverable_downloads(deliverable, seed, short=True)
+
+
+def render_assistant_message(message: dict, seed: str = "0") -> None:
     """
     Affiche une réponse du tuteur : badge + texte de la réponse.
 
@@ -398,6 +477,8 @@ def render_assistant_message(message: dict) -> None:
     if message.get("agents"):
         render_agents(message["agents"])
     st.markdown(message["content"])
+    if message.get("deliverable"):
+        render_deliverable(message["deliverable"], seed)
 
 
 # --- Discussions (multi-conversations façon Claude) -------------------------
@@ -580,7 +661,11 @@ def _store_assistant(conv: dict, result: dict | None) -> None:
             # Agents ayant réellement répondu (ordre d'exécution) → affichés dans le chat.
             "agents": result.get("steps_run", []),
         }
-    render_assistant_message(message)
+        # Livrable structuré (résumé / fiche) → rendu en carte téléchargeable.
+        if result.get("deliverable"):
+            message["deliverable"] = result["deliverable"]
+    # seed = index que ce message occupera (cohérent avec le rejeu enumerate).
+    render_assistant_message(message, seed=str(len(conv["messages"])))
     conv["messages"].append(message)
 
 
@@ -760,10 +845,10 @@ def main() -> None:
                 pending_question = example
 
     # Échanges de la discussion active.
-    for message in current_conversation()["messages"]:
+    for index, message in enumerate(current_conversation()["messages"]):
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
-                render_assistant_message(message)
+                render_assistant_message(message, seed=str(index))
             else:
                 st.markdown(message["content"])
 
