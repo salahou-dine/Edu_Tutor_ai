@@ -79,6 +79,16 @@ MODE_INFO = {
     "analyze": ("Analyse + résumé", "course"),
 }
 
+# Agents du système multi-agents : libellé affiché dans le chat pour montrer
+# QUEL agent a répondu (le planner délègue ; on rend la délégation visible).
+AGENT_INFO = {
+    "tutor":       ("🎓", "Tuteur"),
+    "idp":         ("🔎", "Analyse (IDP)"),
+    "content":     ("📝", "Contenu"),
+    "clarify":     ("❓", "Clarification"),
+    "no_document": ("📂", "Aucun document"),
+}
+
 ERROR_MESSAGE = (
     "Le tuteur n'a pas pu générer une réponse pour le moment. "
     "Réessaie dans quelques instants."
@@ -139,6 +149,33 @@ st.markdown(
     .edu-badge.course  { background: #e6f4ea; color: #1e7d4f; }
     .edu-badge.mixed   { background: #eaf0fb; color: #2f5fc0; }
     .edu-badge.general { background: #f1eefa; color: #6b4bb0; }
+
+    /* Agents ayant répondu : rangée de chips (montre la délégation du planner) */
+    .edu-agents {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.3rem;
+        margin: 0.1rem 0 0.6rem;
+    }
+    .edu-agents .edu-agents-label {
+        font-size: 0.72rem;
+        color: #8a8f98;
+        margin-right: 0.15rem;
+    }
+    .edu-agentchip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.12rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.74rem;
+        font-weight: 600;
+        background: #eef1f5;
+        color: #3a3f47;
+        border: 1px solid #e0e4ea;
+    }
+    .edu-agents .edu-agent-arrow { color: #b3b9c2; font-size: 0.8rem; }
 
     /* Lien d'ouverture d'un cours (nouvel onglet) dans la liste */
     .edu-course-link {
@@ -325,6 +362,28 @@ def render_mode_badge(mode: str) -> None:
     )
 
 
+def render_agents(agents: list[str]) -> None:
+    """Montre, sur une réponse, quel(s) agent(s) y ont répondu (dans l'ordre d'exécution).
+
+    Rend visible la délégation du planner : « 🔎 Analyse (IDP) → 📝 Contenu »,
+    ou « 🎓 Tuteur » pour une réponse directe.
+    """
+    known = [a for a in (agents or []) if a in AGENT_INFO]
+    if not known:
+        return
+    chips = []
+    for agent in known:
+        emoji, label = AGENT_INFO[agent]
+        chips.append(
+            f"<span class='edu-agentchip'>{emoji} {html.escape(label)}</span>"
+        )
+    row = "<span class='edu-agent-arrow'>→</span>".join(chips)
+    st.markdown(
+        f"<div class='edu-agents'><span class='edu-agents-label'>Répondu par</span>{row}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_assistant_message(message: dict) -> None:
     """
     Affiche une réponse du tuteur : badge + texte de la réponse.
@@ -336,6 +395,8 @@ def render_assistant_message(message: dict) -> None:
     """
     if message.get("status") == "success" and message.get("mode"):
         render_mode_badge(message["mode"])
+    if message.get("agents"):
+        render_agents(message["agents"])
     st.markdown(message["content"])
 
 
@@ -516,6 +577,8 @@ def _store_assistant(conv: dict, result: dict | None) -> None:
             "status": "success",
             "content": result.get("answer", ""),
             "mode": mode or "general_tutor",
+            # Agents ayant réellement répondu (ordre d'exécution) → affichés dans le chat.
+            "agents": result.get("steps_run", []),
         }
     render_assistant_message(message)
     conv["messages"].append(message)
@@ -535,6 +598,7 @@ def submit_question(question: str) -> None:
                     cleaned,
                     history=history,
                     selected_doc=st.session_state.get("selected_doc"),
+                    use_planner=True,  # orchestrateur intelligent (Sonnet planifie ; filet déterministe en secours)
                 )
             except Exception:
                 result = None

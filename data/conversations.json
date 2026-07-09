@@ -113,8 +113,29 @@
       ],
       "created_at": 1783331633.4830909,
       "updated_at": 1783334314.0644605
+    },
+    {
+      "id": 3,
+      "title": "Bonjour",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Bonjour"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\n\nBonjour ! Je suis EduTutor, ton tuteur pour ce cours de cybersécurité OT. Je suis là pour t'aider à comprendre tes cours, résoudre des exercices, approfondir des notions, ou préparer tes révisions.\n\nTon cours couvre des thèmes comme la gestion et l'analyse de journaux d'événements (avec des outils comme ELK), les processus de supervision en environnement industriel, et les protocoles réseau en OT. Dis-moi ce sur quoi tu veux travailler !\n\n**Explication**\n\nLa cybersécurité OT (Operational Technology) concerne la protection des systèmes industriels : automates, capteurs, réseaux de contrôle. Elle se distingue de la cybersécurité IT classique par ses contraintes de disponibilité et de sécurité physique. Trois grands axes apparaissent dans ton cours :\n\n- La collecte et la corrélation de journaux d'événements, qui permettent de détecter des incidents sur le réseau.\n- La supervision passive, où un composant observe le trafic sans interagir avec lui.\n- Les protocoles réseau bas niveau (comme DHCP, UDP, IP) qui structurent les communications dans un réseau OT.\n\n**Exemple**\n\nUn opérateur surveille une centrale électrique. Un outil comme ELK collecte les journaux de tous les équipements. Si une machine envoie soudainement un trafic inhabituel sur le réseau, ELK corrèle les événements et génère une alerte, sans perturber le fonctionnement industriel.\n\n**Indication de la partie du cours**\n\nCes notions sont abordées dans le cours Cybersecurity OT 40, parties CM1 et CM3 (Spring 2026).\n\n**Question de vérification**\n\nParmi les trois axes évoqués (analyse de journaux, supervision passive, protocoles réseau), lequel t'intéresse en premier, ou as-tu une question précise sur l'un d'eux ?",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1783589776.1028762,
+      "updated_at": 1783589786.739534
     }
   ],
-  "next_conv_id": 3,
-  "current_id": 2
+  "next_conv_id": 4,
+  "current_id": 1
 }

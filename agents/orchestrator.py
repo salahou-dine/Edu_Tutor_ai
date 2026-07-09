@@ -77,10 +77,24 @@ def _doc_tokens(filename: str) -> set[str]:
     return {t for t in re.split(r"[\s_\-.]+", stem) if len(t) >= 3 and t not in _COMMON_TOKENS}
 
 
+def _corpus_common_tokens(documents: list[dict]) -> set[str]:
+    """Tokens présents dans TOUS les noms de fichiers → non distinctifs (ex. cybersecurity, 40, 2026)."""
+    token_sets = [_doc_tokens(d["filename"]) for d in documents]
+    return set.intersection(*token_sets) if token_sets else set()
+
+
 def _match_doc(question: str, documents: list[dict]) -> dict | None:
-    """Document dont un token DISTINCTIF du nom apparaît dans la question (unique)."""
-    words = {w for w in re.findall(r"\w{3,}", question.lower())}
-    matches = [d for d in documents if _doc_tokens(d["filename"]) & words]
+    """Document dont un token DISTINCTIF du nom apparaît dans la question (unique).
+
+    Les tokens partagés par tout le corpus sont ignorés : sinon un nom de fichier
+    complet (ex. renvoyé par le planner) matcherait tous les cours via « cybersecurity »
+    → faux positif ambigu → clarify indu.
+    """
+    # [a-z0-9] (pas \w) pour que « _ » sépare : un nom de fichier collé
+    # « cybersecurity_ot_40_cm3 » doit se découper en tokens, pas rester un bloc.
+    words = {w for w in re.findall(r"[a-z0-9]{3,}", question.lower())}
+    shared = _corpus_common_tokens(documents)
+    matches = [d for d in documents if (_doc_tokens(d["filename"]) - shared) & words]
     return matches[0] if len(matches) == 1 else None
 
 
