@@ -19,6 +19,7 @@ import html
 import json
 import shutil
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -37,6 +38,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # du projet dans config.settings : pas besoin de changer le répertoire courant.
 
 from agents import orchestrator
+from agents.titler import generate_title
 from interface.exporters import (
     PDF_AVAILABLE,
     safe_filename,
@@ -235,12 +237,59 @@ st.markdown(
         overflow-y: auto;
         overflow-x: hidden;
     }
-    .st-key-conv_history button,
     .st-key-course_list button {
         justify-content: flex-start !important;
         text-align: left !important;
         font-weight: 500 !important;
     }
+
+    /* Historique façon Claude : lignes compactes, police réduite, une seule ligne
+       tronquée, discussion active en gris subtil (PAS de bande orange). */
+    .st-key-conv_history [data-testid="stVerticalBlock"] { gap: 0.05rem !important; }
+    .st-key-conv_history button {
+        justify-content: flex-start !important;
+        text-align: left !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 8px !important;
+        padding: 0.3rem 0.5rem !important;
+        min-height: 0 !important;
+        color: #c7c9d1 !important;
+        overflow: hidden !important;
+    }
+    /* Les conteneurs internes du bouton grandissent à 100% et recentrent le texte :
+       on les force à gauche pour un alignement façon Claude. */
+    .st-key-conv_history button > div,
+    .st-key-conv_history button [data-testid="stMarkdownContainer"] {
+        justify-content: flex-start !important;
+        text-align: left !important;
+        width: 100% !important;
+    }
+    .st-key-conv_history button p {
+        display: block !important;
+        width: 100% !important;
+        text-align: left !important;
+        font-size: 0.875rem !important;
+        font-weight: 400 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    /* Dièse « # » devant chaque titre (remplace l'ancienne bulle 💬). */
+    .st-key-conv_history button p::before {
+        content: "#";
+        color: #7b7f8a;
+        font-weight: 500;
+        margin-right: 0.45rem;
+    }
+    .st-key-conv_history button:hover {
+        background: rgba(255, 255, 255, 0.06) !important;
+        color: #ffffff !important;
+    }
+    /* Discussion active : gris subtil (le ciblage précis de l'id est injecté
+       dynamiquement dans render_history — voir _highlight_active_conversation).
+       On n'utilise PLUS type="primary" -> plus jamais l'orange du thème. */
 
     /* Chat épuré (façon Claude/ChatGPT) : pas d'avatar, pas de bulle colorée */
     [data-testid^="stChatMessageAvatar"] { display: none !important; }
@@ -669,13 +718,40 @@ def _store_assistant(conv: dict, result: dict | None) -> None:
     conv["messages"].append(message)
 
 
+def _last_deliverable(conv: dict) -> dict | None:
+    """Dernier livrable produit dans la discussion (cible d'une itération)."""
+    for message in reversed(conv["messages"]):
+        if message.get("deliverable"):
+            return message["deliverable"]
+    return None
+
+
 def submit_question(question: str) -> None:
-    """Traite une demande en langage naturel via l'orchestrateur multi-agents."""
+    """Traite une demande en langage naturel via l'orchestrateur multi-agents.
+
+    Au 1er échange, le titre de la discussion est généré (Sonnet) EN PARALLÈLE de
+    la réponse : comme la réponse est plus lente, le titre est prêt sans surcoût
+    de latence perceptible (façon Claude)."""
     cleaned = (question or "").strip()
     if not cleaned:
         return
     conv = current_conversation()
+    is_first = not conv["messages"]
+    # Livrable courant pour une éventuelle itération en langage naturel
+    # (« raccourcis-le », « ajoute une section »…) -> réutilise le contenu.
+    last_deliverable = _last_deliverable(conv)
     history = _add_user_turn(conv, cleaned)
+
+    # Titre en tâche de fond (seulement au 1er message), calculé pendant la réponse.
+    title_box: dict = {}
+    title_thread = None
+    if is_first and not conv.get("title_generated"):
+        title_thread = threading.Thread(
+            target=lambda: title_box.__setitem__("title", generate_title(cleaned)),
+            daemon=True,
+        )
+        title_thread.start()
+
     with st.chat_message("assistant"):
         with st.spinner("Le tuteur réfléchit…"):
             try:
@@ -684,10 +760,20 @@ def submit_question(question: str) -> None:
                     history=history,
                     selected_doc=st.session_state.get("selected_doc"),
                     use_planner=True,  # orchestrateur intelligent (Sonnet planifie ; filet déterministe en secours)
+                    last_deliverable=last_deliverable,  # itération = réutilise le livrable courant
                 )
             except Exception:
                 result = None
         _store_assistant(conv, result)
+
+    # Récupère le titre (déjà prêt le plus souvent) et rafraîchit la sidebar.
+    if title_thread is not None and result and result.get("status") != "error":
+        with st.spinner("…"):
+            title_thread.join(timeout=90)
+        conv["title_generated"] = True
+        if title_box.get("title"):
+            conv["title"] = title_box["title"]
+            st.rerun()
 
 
 # --- Sidebar ----------------------------------------------------------------
@@ -706,24 +792,42 @@ def render_history() -> None:
         key=lambda c: c.get("updated_at") or c.get("created_at") or 0, reverse=True
     )
 
+    _highlight_active_conversation(st.session_state.current_id)
     with st.container(key="conv_history"):
         if not listed:
             st.caption("Aucune discussion enregistrée pour le moment.")
             return
         for conv in listed:  # plus récente (dernière activité) en haut
-            is_active = conv["id"] == st.session_state.current_id
+            # Date en INFOBULLE (au survol) plutôt qu'en ligne : garde l'espacement
+            # compact façon Claude tout en distinguant deux titres identiques.
+            stamp = format_relative_time(conv.get("updated_at") or conv.get("created_at"))
             if st.button(
-                f"💬 {conv['title']}",
+                conv["title"],  # le « # » est ajouté en CSS (::before), pas dans le label
                 key=f"conv_{conv['id']}",
                 use_container_width=True,
-                type="primary" if is_active else "secondary",
+                type="secondary",  # jamais "primary" -> pas d'orange ; actif surligné en CSS
+                help=stamp or None,
             ):
                 st.session_state.current_id = conv["id"]  # rouvrir + continuer
                 st.rerun()
-            # Date de dernière activité : distingue deux discussions de même titre.
-            stamp = format_relative_time(conv.get("updated_at") or conv.get("created_at"))
-            if stamp:
-                st.caption(stamp)
+
+
+def _highlight_active_conversation(active_id) -> None:
+    """Surligne la discussion ouverte (gris subtil) en ciblant sa classe de clé
+    Streamlit (.st-key-conv_<id>) — robuste, sans dépendre du type "primary"."""
+    if not active_id:
+        return
+    st.markdown(
+        f"""
+        <style>
+        .st-key-conv_{active_id} button {{
+            background: rgba(255, 255, 255, 0.09) !important;
+            color: #ffffff !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_sidebar() -> None:

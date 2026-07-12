@@ -72,6 +72,73 @@ Demande de l'étudiant :
 {grounding}"""
 
 
+def _build_revise_prompt(previous_markdown: str, instruction: str) -> str:
+    return f"""\
+Utilise le skill {COMPOSE_SKILL_NAME}.
+
+Tu vas MODIFIER un document existant selon la consigne de l'étudiant, puis renvoyer
+le document COMPLET révisé (en français, en Markdown, commençant par un titre `# `).
+Conserve ce qui n'est pas concerné par la modification. Ne renvoie QUE le document,
+sans commentaire autour.
+
+Modification demandée :
+{instruction}
+
+Document actuel :
+----- DÉBUT DU DOCUMENT -----
+{previous_markdown}
+----- FIN DU DOCUMENT -----"""
+
+
+def revise_document(
+    previous_markdown: str,
+    instruction: str,
+    title: str | None = None,
+    force: bool = False,
+) -> dict:
+    """
+    RÉVISE un document déjà généré (réutilise son contenu au lieu de regénérer
+    depuis la source) : applique la consigne (« raccourcis », « ajoute une section »,
+    « plus formel »…) et renvoie la version mise à jour. Même contrat de retour que
+    `generate_document`.
+    """
+    previous_markdown = (previous_markdown or "").strip()
+    instruction = (instruction or "").strip()
+
+    def result(status, content="", title_=None, message=""):
+        return {"status": status, "content_type": _CONTENT_TYPE, "content": content,
+                "title": title_, "warnings": [], "message": message}
+
+    if not previous_markdown:
+        return result("error", message="Aucun document à réviser.")
+    if not instruction:
+        return result("error", message="Consigne de modification vide.")
+
+    key = _cache_key("REVISE::" + instruction, previous_markdown)
+    if not force:
+        cached = load_generated(key, _CONTENT_TYPE, None)
+        if cached is not None:
+            return cached
+
+    prompt = _build_revise_prompt(previous_markdown, instruction)
+    hermes = ask_hermes_with_skill(prompt, skill_name=COMPOSE_SKILL_NAME)
+    if hermes["status"] != "success" or not hermes["content"].strip():
+        return result(
+            "error",
+            message=f"La révision a échoué ({hermes['error'] or 'réponse vide'}).",
+        )
+
+    content = hermes["content"].strip()
+    payload = result(
+        "success",
+        content=content,
+        title_=_extract_title(content) or title or _fallback_title(instruction),
+    )
+    payload["meta"] = {"created_at": datetime.now().isoformat(timespec="seconds")}
+    save_generated(key, _CONTENT_TYPE, payload, None)
+    return payload
+
+
 def generate_document(
     instructions: str,
     course_context: str | None = None,

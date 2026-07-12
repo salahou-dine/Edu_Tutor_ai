@@ -32,7 +32,7 @@ from agents.common import extract_json
 from agents.presenter import present_artifact
 from agents.idp_agent import analyze_document
 from agents.content_agent import generate_content
-from agents.compose_agent import generate_document
+from agents.compose_agent import generate_document, revise_document
 from agents.tutor_agent import answer_student_question_for_ui
 from services.hermes_adapter import ask_hermes_with_skill
 
@@ -144,6 +144,16 @@ _RE_SUMMARY = re.compile(
     re.IGNORECASE,
 )
 _RE_EXPLAIN = re.compile(r"\b(explique|expliquer|d[ée]taille|reformule|clarifie)\b", re.IGNORECASE)
+# Itération sur le livrable COURANT (n'est prise en compte que s'il existe un
+# livrable à réviser -> voir handle()). Verbes d'ÉDITION d'un contenu existant.
+_RE_REVISE = re.compile(
+    r"\b(raccourci[st]?|raccourcir|plus court|abr[èe]ge|r[ée]sume[- ]le plus|"
+    r"allonge|d[ée]veloppe|d[ée]taille (?:plus|davantage|le)|plus (?:court|long|simple|formel|détaillé|clair)|"
+    r"reformule|r[ée][ée]cri[st]|r[ée]cri[st]|r[ée]dige[- ]le autrement|modifie|change|corrige|"
+    r"ajoute|rajoute|enl[èe]ve|retire|supprime|remplace|am[ée]liore|refais|reprends|"
+    r"r[ée]g[ée]n[èe]re|mets? à jour|simplifie)\b",
+    re.IGNORECASE,
+)
 # Rédaction d'un document original : un VERBE d'écriture + un TYPE de document.
 # (le verbe est exigé pour ne pas capter « résume le document » -> résumé.)
 _RE_COMPOSE = re.compile(
@@ -565,7 +575,31 @@ def _trace(intent: str, steps: list[dict], results: list[dict]) -> dict:
 
 # --- API publique ------------------------------------------------------------
 
-def handle(question, history=None, selected_doc=None, use_planner=False) -> dict:
+def _handle_revise(instruction: str, last_deliverable: dict) -> dict:
+    """Itère sur le livrable courant : réutilise son contenu + applique la consigne."""
+    revised = revise_document(
+        last_deliverable.get("markdown", ""),
+        instruction,
+        title=last_deliverable.get("title"),
+    )
+    if revised["status"] != "success":
+        return {"status": "error", "kind": "compose",
+                "answer": revised.get("message") or _GENERIC_ERROR, "doc": None,
+                "steps_run": ["compose"], "trace": {"intent": "revise"}}
+    deliverable = {
+        "type": last_deliverable.get("type", "document"),  # conserve le type d'origine
+        "title": revised.get("title") or last_deliverable.get("title") or "Document",
+        "doc": last_deliverable.get("doc", ""),
+        "markdown": revised["content"],
+    }
+    return {"status": "success", "kind": "compose",
+            "answer": "Voici la version mise à jour 👇", "doc": deliverable["doc"],
+            "deliverable": deliverable, "steps_run": ["compose"],
+            "trace": {"intent": "revise"}}
+
+
+def handle(question, history=None, selected_doc=None, use_planner=False,
+           last_deliverable=None) -> dict:
     """
     Traite une demande d'étudiant via le système multi-agents (routage déterministe
     par défaut). Retour : {status, kind, answer (Markdown), doc, steps_run, trace}.
@@ -574,6 +608,11 @@ def handle(question, history=None, selected_doc=None, use_planner=False) -> dict
     if not cleaned:
         return {"status": "error", "kind": "tutor", "answer": _GENERIC_ERROR,
                 "doc": None, "steps_run": [], "trace": {}}
+
+    # Itération sur le livrable courant (AVANT toute planification) : si l'étudiant
+    # demande une modification et qu'un livrable existe, on le RÉUTILISE.
+    if last_deliverable and _RE_REVISE.search(cleaned.lower()):
+        return _handle_revise(cleaned, last_deliverable)
 
     documents = list_documents()
     plan = _plan_with_llm(cleaned, history, documents, selected_doc) if use_planner else None

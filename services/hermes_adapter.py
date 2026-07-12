@@ -111,7 +111,10 @@ def ask_hermes_with_skill(
         }
 
     # Liste d'arguments (pas de shell) -> pas d'injection, prompt brut sûr.
-    cmd = [hermes_bin, "-z", prompt, "--skills", skill_name]
+    # skill_name=None -> appel Hermes SANS skill (utilitaire neutre, ex. titrage).
+    cmd = [hermes_bin, "-z", prompt]
+    if skill_name:
+        cmd += ["--skills", skill_name]
 
     last_failure: dict | None = None
 
