@@ -5,8 +5,10 @@
 > contexte, architecture, rôle de chaque fichier, et **chaque décision** prise
 > avec sa justification.
 >
-> Date de l'audit : 2026-06-09 · Périmètre : tout le code source du projet
-> `hermes-education` (hors `.venv`, `data/vectorstore`, copies statiques).
+> Date de l'audit : **2026-07-12** (remplace l'audit du 2026-06-09, devenu
+> obsolète : le projet est passé d'un tuteur mono-agent à un **système
+> multi-agents**) · Périmètre : tout le code source du projet `hermes-education`
+> (hors `.venv`, `data/vectorstore`, copies statiques), ~5 340 lignes Python.
 
 ---
 
@@ -18,63 +20,107 @@
 4. [Vue d'ensemble : rôle de chaque fichier](#4-vue-densemble--rôle-de-chaque-fichier)
 5. [Détail fichier par fichier](#5-détail-fichier-par-fichier)
 6. [Les grandes décisions techniques (et pourquoi)](#6-les-grandes-décisions-techniques-et-pourquoi)
-7. [Limites connues & dette technique](#7-limites-connues--dette-technique)
+7. [Constats d'audit, limites & dette technique](#7-constats-daudit-limites--dette-technique)
 8. [Comment lancer le projet](#8-comment-lancer-le-projet)
 
 ---
 
 ## 1. Contexte global
 
-**EduTutor** est un **tuteur académique** propulsé par **Hermes Agent**. Ce
-n'est **pas** un clone de NotebookLM ni un simple « assistant documentaire » :
-les documents de cours servent de **support pédagogique**, mais l'objectif
-principal est d'**aider l'étudiant à comprendre** (expliquer, donner un exemple,
-le renvoyer vers la bonne partie du cours, vérifier sa compréhension), avec ou
+**EduTutor** est un **tuteur académique multi-agents** propulsé par **Hermes
+Agent**. Ce n'est pas un clone de NotebookLM : les documents de cours servent de
+support pédagogique, mais l'objectif est d'**aider l'étudiant à apprendre**
+(expliquer, produire des ressources d'étude, vérifier sa compréhension), avec ou
 sans document pertinent indexé.
 
-Le système combine quatre briques aux responsabilités séparées :
+### 1.1 Les quatre agents
 
-- **RAG** (`rag/`) — *trouver* les passages utiles dans les cours indexés.
-- **Tools / logique Python** — fonctions déterministes (recherche, choix du
-  mode pédagogique, mise en forme des indications, construction du prompt).
-- **Skill Hermes** (`~/.hermes/skills/education/education-tutor/SKILL.md`,
-  externe au repo) — les **règles pédagogiques** et le comportement du tuteur.
-- **Hermes** — le **moteur d'orchestration et de génération** de la réponse
-  finale, appelé en CLI.
+| Agent | Rôle | Précondition |
+|---|---|---|
+| 🎓 **Tuteur** (`tutor_agent`) | Répond pédagogiquement à une question, ancré sur les cours (RAG) et l'historique | aucune |
+| 🔎 **IDP** (`idp_agent`) | Analyse documentaire structurée : type, thèmes, objectifs, définitions, dates — avec **provenance** (ancrage `section_id`) | aucune |
+| 📝 **Contenu** (`content_agent`) | Transforme un document **déjà analysé** en ressource d'étude : résumé structuré ou fiche de révision | `artifact` (analyse IDP) |
+| ✍️ **Compose** (`compose_agent`) | Rédige un **document original** (rapport, exposé, note…) depuis une consigne libre, façon Artifacts/Canvas ; sait aussi **réviser** un livrable existant | aucune |
 
-Trois **modes pédagogiques** sont choisis automatiquement selon la pertinence du
-meilleur passage retrouvé :
+Un **orchestrateur** (`agents/orchestrator.py`) décide quel(s) agent(s)
+interviennent et dans quel ordre. Le chat de l'UI passe par
+`orchestrator.handle(..., use_planner=True)` : un **planner LLM** (skill
+`education-orchestrator`, Sonnet) propose le plan ; Python **valide, répare et
+exécute** ; un routage **déterministe** (table d'intention regex) sert de filet
+de secours si le planner échoue. L'UI affiche sur chaque réponse **quels agents
+ont répondu** (« Répondu par 🔎 Analyse (IDP) → 📝 Contenu »).
+
+### 1.2 Les livrables (façon Artifacts/Canvas)
+
+Quand Contenu ou Compose produit une ressource, elle est renvoyée comme
+**livrable structuré** `{type, title, doc, markdown}` rendu dans le chat en
+**carte** distincte (aperçu défilant, bouton ⤢ Agrandir en modal,
+téléchargements **.docx / .md / .pdf**). Le texte de la bulle de chat n'est
+qu'une courte intro (« Voici ton document 👇 ») — pas de doublon de contenu.
+L'étudiant peut ensuite **itérer en langage naturel** (« raccourcis-le »,
+« ajoute une section sur X ») : l'orchestrateur détecte l'intention de révision
+et **réutilise le markdown du dernier livrable** (pas de régénération depuis la
+source).
+
+### 1.3 Modes pédagogiques du tuteur
+
+Choisis automatiquement selon la distance cosinus du meilleur passage retrouvé :
 
 | Mode | Quand | Comportement |
 |---|---|---|
-| `course_grounded` | passage de cours très proche | répond surtout à partir du cours, indique la partie à revoir |
-| `mixed` | passage moyennement proche | sépare ce que dit le cours et le complément général |
-| `general_tutor` | aucun passage fiable | réponse pédagogique générale, en précisant qu'elle n'est pas fondée sur un cours |
+| `course_grounded` | distance < 0.45 | répond surtout à partir du cours, indique la partie à revoir |
+| `mixed` | distance < 0.65 | sépare ce que dit le cours et le complément général |
+| `general_tutor` | sinon | réponse pédagogique générale, en le précisant |
+| `clarify` | question vague + plusieurs cours | demande **lequel** (déterministe, sans Hermes) |
+| `course_summary` | « résume le cours … » | texte **intégral** du cours en un appel |
 
-Un 4ᵉ mode applicatif, `clarify`, est produit **sans appeler Hermes** quand la
-question est vague (« de quoi parle le cours ? ») et que **plusieurs** cours sont
-indexés : l'agent demande alors **lequel**.
+### 1.4 Contraintes structurantes (respectées partout)
 
-**Contrainte structurante respectée partout :** ne jamais montrer à l'étudiant
-les détails techniques (chunks, distances, top_k, prompt interne, vectorstore,
-chemins) ; et ne jamais contourner Hermes par un appel LLM direct.
+- **Jamais** de détail technique côté étudiant (chunks, distances, section_id,
+  doc_id, prompt, vectorstore, chemins). Garanti par une double sortie agent
+  (complète avec `debug` / UI propre) et par le `presenter` qui **filtre** les
+  section_ids que le LLM glisserait dans l'analyse.
+- **Jamais** d'appel LLM direct contournant Hermes : tout passe par la CLI
+  `hermes -z … [--skills <skill>]` via l'unique adaptateur.
+- Le framework `hermes-agent/` et `~/.hermes/` ne sont **pas modifiés** ; la
+  méthode d'extension supportée est la création de **skills** sous
+  `~/.hermes/skills/education/` (5 skills : tutor, idp, content, compose,
+  orchestrator).
+- Hypothèse **mono-utilisateur** documentée (multi-utilisateurs = phase future).
+
+### 1.5 Modèle LLM
+
+Depuis le 2026-07-06 : **`anthropic/claude-sonnet-4-6`** en API directe
+Anthropic (configuré côté Hermes dans `~/.hermes/config.yaml`, clé dans
+`~/.hermes/.env`). Remplace `owl-alpha` (OpenRouter), qui hallucinait et routait
+mal. Leçon retenue : les modèles de **raisonnement** (réponse dans le canal
+*reasoning*, `content` vide) sont **incompatibles** avec `hermes -z` — il faut
+un modèle de chat standard.
 
 ---
 
 ## 2. Pile technique & dépendances
 
-- **Python 3.11/3.12**.
-- **Streamlit** — interface web (`interface/streamlit_app.py`).
-- **ChromaDB** — base vectorielle (persistée sur disque dans `data/vectorstore/`).
-- **sentence-transformers** — embedding **multilingue**
-  `paraphrase-multilingual-MiniLM-L12-v2` (tire PyTorch + transformers).
-- **PyMuPDF (`fitz`)** — extraction de texte des PDF.
-- **Hermes Agent** — binaire CLI externe (`hermes`), appelé en sous-processus.
-  Modèle configuré côté Hermes (ex. `openrouter/owl-alpha`).
+- **Python 3.12**, environnement `.venv/`.
+- **Streamlit ≥1.58,<2.0** — interface web (borne haute : l'UI dépend de
+  sélecteurs `data-testid` internes).
+- **ChromaDB** — base vectorielle persistée (`data/vectorstore/`).
+- **sentence-transformers** — embedding multilingue
+  `paraphrase-multilingual-MiniLM-L12-v2` **et** reranker cross-encoder
+  `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (~470 Mo chacun, cache HF).
+- **PyMuPDF (fitz)** — extraction PDF (texte + tailles de police) et rendu de
+  pages pour l'OCR.
+- **python-docx / python-pptx / pytesseract / pillow** — lecture Word,
+  PowerPoint, OCR d'images et de PDF scannés (moteur système Tesseract requis :
+  `tesseract-ocr` + langues fra/eng).
+- **xhtml2pdf + markdown** — export PDF des livrables (Markdown → HTML → PDF).
+- **Hermes Agent** — binaire CLI externe `hermes`, appelé en sous-processus.
+- Dév : **Playwright + Chromium** (installés dans le venv, hors
+  requirements.txt) pour les captures d'écran de l'UI pendant le développement.
 
-> ⚠️ **Constat d'audit** : `requirements.txt` ne liste que `streamlit` et
-> `chromadb`. Les dépendances réellement nécessaires (`sentence-transformers`,
-> `PyMuPDF`) **manquent** — voir §7.
+`requirements.txt` est **complet** (contrairement au constat de l'audit
+précédent) : versions minimales validées, dépendances externes (Hermes,
+Tesseract) documentées en commentaire.
 
 ---
 
@@ -83,80 +129,128 @@ chemins) ; et ne jamais contourner Hermes par un appel LLM direct.
 ### 3.1 Couches
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ interface/streamlit_app.py   (UI étudiant, état, persistance)│
-│      appelle UNIQUEMENT ↓                                     │
-│ agents/tutor_agent.py        (ORCHESTRATEUR)                  │
-│   ├─ rag/retriever.py        (recherche + liste des cours)    │
-│   ├─ rag/source_formatter.py (chunks → indications lisibles)  │
-│   └─ services/hermes_adapter.py (appel CLI Hermes one-shot)   │
-│                                                               │
-│ rag/indexer.py ← chunker.py + document_loader.py + embeddings │
-│ config/settings.py           (réglages centraux)              │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│ interface/streamlit_app.py   UI étudiant (chat, cartes livrables,  │
+│   + interface/exporters.py   historique, cours, exports docx/md/pdf)│
+│      appelle UNIQUEMENT ↓                                           │
+│ agents/orchestrator.py       ORCHESTRATEUR (planner LLM + filet     │
+│   │                          déterministe, réparation préconditions,│
+│   │                          exécution, composition, livrables)     │
+│   ├─ agents/tutor_agent.py   agent TUTEUR  (RAG + modes + Hermes)   │
+│   ├─ agents/idp_agent.py     agent IDP     (extraction + analyse)   │
+│   ├─ agents/content_agent.py agent CONTENU (résumé / fiche)         │
+│   ├─ agents/compose_agent.py agent COMPOSE (rédaction + révision)   │
+│   ├─ agents/presenter.py     artefact → Markdown étudiant           │
+│   ├─ agents/registry.py      capacités déclaratives (menu planner)  │
+│   └─ agents/titler.py        titre de discussion (appel neutre)     │
+│                                                                     │
+│ Contrat commun : agents/artifact.py (DocumentArtifact v2)           │
+│                + agents/document_store.py (doc_id hash + caches)    │
+│                                                                     │
+│ rag/ : document_loader (md/txt/pdf/docx/pptx/images+OCR, segments   │
+│        structurés) → chunker (structure-aware) → indexer (sync      │
+│        incrémental + rebuild) → retriever → reranker → formatter    │
+│                                                                     │
+│ services/hermes_adapter.py   SEUL point d'appel Hermes (CLI -z)     │
+│ config/settings.py           réglages centraux (env-surchargeables) │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Flux « poser une question » (mode cours)
+### 3.2 Flux « message dans le chat »
 
 ```
-question étudiant
-  └─ _build_retrieval_query(question, history)         # enrichi par l'historique
-       └─ search_course(query)  → chunks {text, source, distance, title, ...}
-            └─ choose_tutor_mode(chunks)               # via seuils de distance
-                 ├─ (si vague + plusieurs cours) → _clarification_result  (sans Hermes)
-                 ├─ (si vague + 1 cours)         → re-recherche ancrée, mode course_grounded
-                 └─ format_course_indications(chunks) → indications {course, part, excerpt}
-                      └─ build_tutor_prompt(question, mode, indications, history)
-                           └─ ask_hermes_with_skill(prompt)  # subprocess hermes -z
-                                └─ réponse → answer_student_question(_for_ui) → UI
+message étudiant
+  └─ submit_question (UI)
+       ├─ (1er message) thread PARALLÈLE titler.generate_title  → titre sidebar
+       └─ orchestrator.handle(question, history, use_planner=True,
+                              last_deliverable=<dernier livrable du fil>)
+            ├─ 0. RÉVISION ? (_RE_REVISE + livrable existant)
+            │      └─ compose.revise_document(markdown existant, consigne)
+            │          → livrable mis à jour (nouveau message)         [sans planner]
+            ├─ 1. PLAN : _plan_with_llm (skill education-orchestrator, Sonnet)
+            │      └─ échec/JSON invalide → _classify_to_plan (regex, filet)
+            ├─ 2. _repair_preconditions : insère `idp` avant content/tutor-section
+            │      si le document n'est pas analysé
+            ├─ 3. _execute_all : _run_tutor / _run_idp / _run_content / _run_compose
+            └─ 4. _compose : UNE réponse étudiant
+                   ├─ content/compose réussi → deliverable {type,title,doc,markdown}
+                   │    + intro courte dans la bulle
+                   └─ analyze → présentation IDP + carte résumé
+  └─ _store_assistant : message {content, mode, agents: steps_run, deliverable?}
+       → render : badge de mode + chips « Répondu par … » + carte livrable
 ```
 
-### 3.3 Flux « indexation »
+### 3.3 Flux « agent IDP » (analyse documentaire)
 
 ```
-fichier déposé (UI)  → data/courses/   (save_uploaded_courses)
-  └─ ensure_index_up_to_date()  (déclenché si l'empreinte du dossier change)
-       └─ index_all_courses()
-            ├─ load_document_text()   (md/txt/pdf)
-            ├─ chunk_document_text()  (découpage)
-            ├─ embeddings (multilingue, cosinus)
-            └─ collection temporaire → bascule (jamais de base vide)
+document → compute_doc_id (SHA-256 contenu, 16 hex)
+  → cache data/artifacts/<doc_id>.json ? (schema_version == 2)   → hit : fini
+  → extract_document()          DÉTERMINISTE (segments, langue, pages, qualité)
+  → contexte sections [sN]      (intégral, ou condensé si > MAX_SUMMARY_INPUT_CHARS)
+  → Hermes (skill education-idp) → extract_json (parsing tolérant)
+  → _validate_analysis          ANCRAGE : ne garde que les section_id RÉELS
+  → DocumentArtifact {extraction, analysis} + cache
+  (échec ×2 → analysis=None, jamais d'analyse à moitié fausse)
 ```
 
-### 3.4 Données sur disque
+### 3.4 Flux « indexation » (RAG)
 
-| Chemin | Contenu |
-|---|---|
-| `data/courses/` | cours **actifs** (indexés). 5 PDF de cybersécurité actuellement. |
-| `data/samples/rag_intro.md` | cours d'exemple (non indexé par défaut). |
-| `data/vectorstore/` | base ChromaDB (sqlite + index HNSW). |
-| `data/conversations.json` | discussions persistées (titres + messages). |
-| `data/last_tutor_prompt.md` | dernier prompt sauvegardé (fallback manuel Hermes). |
-| `interface/static/courses/` | copies des cours servies en HTTP (ouverture nouvel onglet). |
+```
+fichier déposé (UI) → data/courses/
+  └─ ensure_index_up_to_date() → sync_courses_index()   INCRÉMENTAL (mtime)
+       ├─ cours ajouté   → load_document_segments → chunk_segments → add
+       ├─ cours modifié  → delete(where source) + ré-add
+       ├─ cours supprimé → delete(where source)
+       └─ inchangé       → no-op
+  (index_all_courses(reset=True) = REBUILD complet via collection temporaire,
+   requis quand la LOGIQUE de découpage/embedding change)
+```
+
+### 3.5 Données sur disque
+
+| Chemin | Contenu | Git |
+|---|---|---|
+| `data/courses/` | cours actifs (source de vérité des documents) | non commité de fait (binaire) |
+| `data/vectorstore/` | ChromaDB (sqlite + HNSW), métadonnées `{source, title, section, page, chunk_index, mtime}` | ignoré |
+| `data/artifacts/<doc_id>.json` | artefacts IDP (schema v2, avec texte des sections) | ignoré |
+| `data/generated/<clé>__<type>__<opts>.json` | contenus générés (résumé/fiche/document) | ignoré |
+| `data/conversations.json` | discussions persistées (plafond 200, purge par ancienneté) | ignoré (sensible) |
+| `data/last_tutor_prompt.md` | dernier prompt (fallback manuel) | ignoré |
+| `data/hermes_errors.log` | journal des échecs Hermes (dev) | ignoré (`*.log`) |
+| `interface/static/courses/` | copies servies en HTTP (ouverture nouvel onglet) | régénérable |
+| `~/.hermes/skills/education/…` | les 5 skills (HORS repo) | hors périmètre git |
 
 ---
 
 ## 4. Vue d'ensemble : rôle de chaque fichier
 
-| Fichier | Rôle en une phrase |
-|---|---|
-| `config/settings.py` | Tous les réglages centraux (chemins, embedding, seuils, Hermes). |
-| `rag/chunker.py` | Découpe un texte en *chunks* (par paragraphe, avec overlap). |
-| `rag/document_loader.py` | Extrait le texte d'un fichier (.md/.txt/.pdf). |
-| `rag/embeddings.py` | Fournit la fonction d'embedding **partagée** (indexer + retriever). |
-| `rag/indexer.py` | Indexe les cours dans ChromaDB (avec bascule sans fenêtre vide). |
-| `rag/retriever.py` | Recherche les chunks pertinents + liste les cours indexés. |
-| `rag/source_formatter.py` | Transforme les chunks techniques en *indications de cours* lisibles. |
-| `services/hermes_adapter.py` | Appelle Hermes en CLI one-shot (seul point qui « sait » comment). |
-| `agents/tutor_agent.py` | **Orchestrateur** : enchaîne tout et renvoie une réponse structurée. |
-| `tests_manual/test_tutor_agent.py` | Test manuel (3 questions + sortie UI). |
-| `interface/streamlit_app.py` | Interface web étudiant (chat, cours, historique, persistance). |
-| `.streamlit/config.toml` | Config Streamlit (watcher off, fichiers statiques, thème sombre). |
-| `requirements.txt` | Dépendances déclarées (incomplet — voir §7). |
-| `docs/agent_tutor_architecture.md` | Document de conception (le « pourquoi »). |
-| `rag/tutor_prompt.py` *(legacy)* | Ancien générateur de prompt (flux manuel, **non utilisé**). |
-| `rag/tutor_cli.py` *(legacy)* | Ancien CLI de préparation RAG (**non utilisé**). |
-| `*/__init__.py` | Fichiers vides marquant les packages Python. |
+| Fichier | Lignes | Rôle en une phrase |
+|---|---|---|
+| `config/settings.py` | 132 | Tous les réglages centraux, env-surchargeables (chemins, embedding, chunking, seuils, Hermes, OCR). |
+| `rag/document_loader.py` | 470 | Extraction **structurée** (segments `{text, heading, page}`) : md/txt, PDF (+OCR), docx, pptx, images ; détection de titres multi-signaux. |
+| `rag/chunker.py` | 131 | `chunk_segments` : segments → chunks structure-aware (900 car., overlap 120, jamais 2 sections fusionnées). |
+| `rag/embeddings.py` | 33 | Fonction d'embedding **partagée** indexer/retriever (multilingue, cosinus), cache singleton. |
+| `rag/indexer.py` | 253 | `sync_courses_index` (incrémental par mtime) + `index_all_courses` (rebuild par collection temporaire). |
+| `rag/retriever.py` | 142 | Recherche (vivier 20), inventaire des cours, chunks d'un cours entier, délégation reranker. |
+| `rag/reranker.py` | 79 | Cross-encoder multilingue : reclasse le vivier, garde top-5 ; repli propre sur tri par distance. |
+| `rag/source_formatter.py` | 119 | Chunks techniques → indications lisibles `{course, part, excerpt}` depuis les **métadonnées** (section/page). |
+| `services/hermes_adapter.py` | 191 | Unique point d'appel Hermes (CLI `-z`, skill optionnel), retry, timeout 180 s, journal des échecs. |
+| `agents/registry.py` | 78 | Capacités déclaratives {tutor, idp, content, compose} : menu du planner + base de validation. |
+| `agents/artifact.py` | 158 | `DocumentArtifact` v2 (extraction déterministe + analysis Hermes, sections **avec texte**), détection de langue. |
+| `agents/document_store.py` | 95 | `doc_id` = SHA-256 du contenu ; caches JSON artefacts + contenus générés. |
+| `agents/common.py` | 50 | `extract_json` : parsing tolérant des sorties JSON de Hermes (fences, texte autour). |
+| `agents/tutor_agent.py` | 731 | Agent tuteur : RAG → mode → prompt (règles par mode) → Hermes ; résumé global ; clarification ; double sortie. |
+| `agents/idp_agent.py` | 248 | Agent IDP : extraction + analyse Hermes validée/ancrée section_id, cache, retry ×2. |
+| `agents/content_agent.py` | 260 | Agent contenu : artefact → résumé/fiche ; contrats `needs_analysis`/`not_processable` ; cache par (doc, type, sections). |
+| `agents/compose_agent.py` | 211 | Agent rédaction : `generate_document` (original, ancrage cours optionnel) + `revise_document` (itération sur l'existant). |
+| `agents/orchestrator.py` | 684 | Orchestrateur : planner LLM + table d'intention, réparation, exécution, composition, livrables, révision, trace. |
+| `agents/presenter.py` | 109 | Artefact IDP → Markdown étudiant, **filtrage des section_ids** résiduels. |
+| `agents/titler.py` | 53 | Titre de discussion (3-6 mots) via appel Hermes **neutre** (sans skill). |
+| `interface/streamlit_app.py` | 974 | UI : chat, cartes livrables, chips agents, sidebar façon Claude, cours, persistance. |
+| `interface/exporters.py` | 142 | Livrable Markdown → octets .docx (python-docx), .md, .pdf (xhtml2pdf, optionnel). |
+| `tests_manual/test_tutor_agent.py` | — | Vérification manuelle du tuteur (3 questions + sortie UI). |
+| `.streamlit/config.toml` | — | Watcher off, fichiers statiques on, thème sombre. |
+| `docs/agent_tutor_architecture.md` | — | Document de conception V1 (mono-agent) — partiellement obsolète. |
 
 ---
 
@@ -164,572 +258,565 @@ fichier déposé (UI)  → data/courses/   (save_uploaded_courses)
 
 ### 5.1 `config/settings.py`
 
-**Rôle.** Source unique de vérité pour la configuration. Aucune clé API ici.
+Source unique de vérité, **aucune clé API**. Nouveautés depuis l'audit V1 :
 
-**Contenu clé.**
-- `PROJECT_ROOT = Path(__file__).resolve().parents[1]` → racine du projet,
-  calculée **relativement** au fichier (jamais de chemin absolu en dur).
-- Chemins dérivés : `DATA_DIR`, `COURSES_DIR`, `SAMPLES_DIR`, `VECTORSTORE_PATH`,
-  `LAST_PROMPT_PATH`.
-- `SUPPORTED_EXTENSIONS = (".md", ".txt", ".pdf")`.
-- `COLLECTION_NAME = "course_chunks"`.
-- **Embedding** : `EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"`,
-  `EMBEDDING_SPACE = "cosine"`.
-- **RAG** : `DEFAULT_TOP_K = 3`, `EXCERPT_MIN_CHARS = 60`, `EXCERPT_MAX_CHARS = 90`.
-- **Seuils de mode** : `COURSE_GROUNDED_MAX_DISTANCE = 0.45`,
-  `MIXED_MAX_DISTANCE = 0.65`.
-- **Hermes** : `DEFAULT_SKILL_NAME = "education-tutor"`,
-  `HERMES_TIMEOUT_SECONDS = 120`.
+- **Multi-agents** : `ARTIFACTS_DIR`, `GENERATED_DIR`,
+  `ARTIFACT_SCHEMA_VERSION = 2` (v2 = texte des sections dans l'artefact ; un
+  bump invalide les caches).
+- **Formats** : `SUPPORTED_EXTENSIONS` étendu (md, txt, pdf, docx, pptx, png,
+  jpg, jpeg, tiff, tif, bmp, webp) ; OCR `OCR_LANG="fra+eng"`, `OCR_DPI=200`.
+- **Chunking structure-aware** : `CHUNK_TARGET_CHARS=900`,
+  `CHUNK_OVERLAP_CHARS=120`, `HEADING_FONT_RATIO=1.15` (titre PDF = police
+  ≥ 1.15 × taille modale).
+- **Récupération découplée** : `RETRIEVAL_TOP_K=20` (vivier) /
+  `CONTEXT_TOP_K=5` (contexte final).
+- **Reranker** : `RERANKER_ENABLED=1`, `RERANKER_MODEL_NAME` (cross-encoder
+  multilingue).
+- **Seuils de mode** : 0.45 / 0.65 (cosinus, calibrés multilingue).
+- **Hermes** : timeout **180 s** (run normal ~70 s → marge), `HERMES_MAX_ATTEMPTS=2`,
+  backoff 2 s, `HERMES_ERROR_LOG`. `MAX_SUMMARY_INPUT_CHARS=1 500 000`
+  (garde-fou résumé global ≈ 500 pages).
 
-**Décisions.**
-- *Tout centraliser* pour qu'un changement de comportement (extraits, seuils,
-  skill) ne touche qu'un fichier.
-- *Seuils dans la config* car ils dépendent du modèle d'embedding **et** du
-  corpus ; ils ont été **recalibrés** quand on est passé en embedding multilingue
-  + distance cosinus (avant : 1.10/1.30 en L2 ; après : 0.45/0.65 en cosinus).
-
-**⚠️ Constats d'audit (commentaires obsolètes).**
-- Le commentaire des extraits dit « ~250-350 caractères » alors que les valeurs
-  sont **60/90** (réduites volontairement par l'utilisateur en cours de route).
-- Le commentaire des seuils mentionne encore « distance (L2) » en en-tête, alors
-  que l'échelle est désormais **cosinus** (la ligne L2 est un reliquat).
-  → Sans impact fonctionnel, mais à corriger pour la cohérence documentaire.
+**Décision.** Presque tout est surchargeable par variable d'environnement —
+ajuster en production sans toucher au code.
 
 ---
 
-### 5.2 `rag/chunker.py`
+### 5.2 `rag/document_loader.py` — extraction structurée multi-formats
 
-**Rôle.** Découper un texte en *chunks* exploitables par la base vectorielle.
+Cœur de la qualité RAG. Deux APIs : `load_document_text` (plat, rétrocompat) et
+**`load_document_segments`** → `[{text, heading, page}]`, consommée par
+l'indexeur ET par l'artefact IDP (même vérité pour le RAG et les agents).
 
-**Fonctions.**
-- `read_markdown_file(path)` → lit un fichier texte UTF-8.
-- `split_long_text(text, max_chars)` → découpe **par mots** un paragraphe trop
-  long (évite les chunks vides ; **pas** d'overlap dans ce chemin).
-- `chunk_text_by_paragraph(text, source, max_chars=800, overlap_chars=100)` →
-  découpe sur les doubles sauts de ligne (`\n\n`), regroupe jusqu'à 800 car.,
-  ajoute un **overlap** d'environ 100 car. entre chunks. Retourne des dicts
-  `{id, source, chunk_index, text}` avec `id = "<stem>_chunk_<n>"`.
-- `chunk_markdown_file(path)` → lit + découpe (utilisé par le legacy `index_course`).
-- `chunk_document_text(text, source, title=None)` → version **générique** (md,
-  txt, PDF déjà extrait) ; ajoute `title` aux chunks si fourni. **C'est elle
-  qu'utilise `index_all_courses`.**
+**Détection de titre multi-signaux** (`_looks_like_heading`), volontairement
+format-agnostique car les documents réels sont hétérogènes :
+1. numérotation (`1.2`, `IV.`, `A)`) et mots-clés (« Chapitre 2 ») — fiables ;
+2. police PDF (> corps × `HEADING_FONT_RATIO`) ou gras — signaux **faibles** :
+   exigent une « forme de titre » (commence par majuscule/chiffre, court) pour
+   éliminer les fragments de slides ;
+3. ligne courte ENTIÈREMENT en majuscules ;
+4. titres Markdown `#`.
 
-**Décisions.** Découpage orienté paragraphe avec overlap pour ne pas couper une
-idée en deux ; repli mot-à-mot pour les paragraphes géants.
-
-**⚠️ Constat d'audit.** Les PDF extraits et certains `.md` (dont `rag_intro.md`,
-qui utilise des lignes « vides » contenant un espace) ne se découpent **pas** sur
-des frontières de sections : `split("\n\n")` ne coupe pas, donc on retombe sur
-des fenêtres de ~800 car. **non alignées aux titres**. Conséquence directe sur la
-détection de « partie du cours » (cf. `source_formatter`). `id` basé sur le stem
-→ collision possible si deux fichiers ont le même nom sans l'extension.
+**Par format** :
+- **PDF** (`_segments_from_pdf`) : lignes + tailles de police via PyMuPDF ;
+  taille « corps » = taille modale ; **filtrage du bruit récurrent**
+  (lignes répétées sur ≥ 30 % des pages, dates seules, numéros seuls) ; titres
+  multi-lignes agrégés (même police, avant tout corps) ; chaque segment porte sa
+  page de début. PDF **sans texte** → tentative **OCR** page par page
+  (`_ocr_pdf_pages` : rendu image DPI 200 + pytesseract) sinon `ValueError`.
+- **.docx** : titres par **style** Word (Heading/Titre/Title) + heuristique ;
+  tableaux regroupés en fin (ordre non garanti par python-docx).
+- **.pptx** : 1 diapo = 1 section (titre = shape titre reconnu par
+  **shape_id** — `is` non fiable, python-pptx recrée les wrappers ; page = n° de
+  diapo).
+- **Images** : OCR pur ; image sans texte → erreur explicite (pas d'invention ;
+  la compréhension **visuelle** d'un schéma nécessiterait un modèle de vision,
+  reporté).
 
 ---
 
-### 5.3 `rag/document_loader.py`
+### 5.3 `rag/chunker.py`
 
-**Rôle.** Extraire le **texte brut** d'un cours, quel que soit son format.
-
-**Fonctions.**
-- `load_document_text(file_path)` :
-  - `.md` / `.txt` → lecture directe (`errors="replace"` pour tolérer les octets
-    invalides).
-  - `.pdf` → `_load_pdf_file` via **PyMuPDF** (`fitz`), page par page.
-  - sinon → `ValueError` (format non supporté).
-- `_load_pdf_file` lève une **`RuntimeError` claire** si PyMuPDF n'est pas
-  installé, et une `ValueError` si le PDF ne contient aucun texte (probable PDF
-  scanné — **pas d'OCR**).
-
-**Décisions.** Jamais d'échec silencieux : chaque cas d'erreur est explicite et
-remonté à l'appelant (`index_all_courses` les capture par fichier). Existence du
-fichier vérifiée en premier.
+- **`chunk_segments(segments, …)`** — le chemin unique : empaquette chaque
+  section à ~900 car. (overlap 120), **ne fusionne jamais deux sections**,
+  produit `{id, source, chunk_index, text, title?, section?, page?}`.
+  `_split_text` respecte paragraphes puis phrases, découpe dure en dernier
+  recours.
+- Les fonctions legacy V1 (découpage « par paragraphes ») ont été **supprimées**
+  le 2026-07-12 (aucun usage externe). Démo CLI :
+  `python -m rag.chunker <document>`.
 
 ---
 
 ### 5.4 `rag/embeddings.py`
 
-**Rôle.** Fournir **la même** fonction d'embedding à l'indexation **et** à la
-recherche — point le plus critique de tout RAG (sinon vecteurs incomparables).
-
-**Fonctions.**
-- `get_embedding_function()` → instancie (et **met en cache** dans une variable
-  module `_EMBEDDING_FN`) un `SentenceTransformerEmbeddingFunction` avec le
-  modèle multilingue de `settings`.
-- `collection_metadata()` → `{"hnsw:space": "cosine"}`, métadonnées de collection
-  cohérentes partout.
-
-**Décisions.** Centralisation + cache singleton (le modèle ~470 Mo n'est chargé
-qu'une fois par process). Le choix **multilingue** est ce qui permet à une
-question **française** de retrouver un cours **anglais** (cas réel : cours de
-cybersécurité en anglais, étudiant qui interroge en français).
+Fonction d'embedding **partagée** (singleton module) + `collection_metadata()`
+(`{"hnsw:space": "cosine"}`). Le choix **multilingue** permet à une question FR
+de retrouver un cours EN (corpus réel : cours de cybersécurité OT en anglais).
 
 ---
 
 ### 5.5 `rag/indexer.py`
 
-**Rôle.** Construire/mettre à jour la base vectorielle à partir des cours.
-
-**Fonctions.**
-- Constantes legacy `VECTORSTORE_PATH = "data/vectorstore"`,
-  `COLLECTION_NAME = "course_chunks"` (utilisées par `index_course`).
-- `_is_indexable(path)` → fichier régulier, non caché/temporaire, extension
-  supportée.
-- `_relative_source(path)` → chemin relatif à la racine (affichage propre +
-  stocké comme `source`).
-- `_derive_title(text, path)` → titre = premier `# H1` Markdown, sinon nom de
-  fichier nettoyé.
-- `reset_collection(client, name)` → supprime puis recrée une collection (avec
-  embedding + métadonnées). Utilisé par `index_course`.
-- `index_course(file_path)` → **legacy** : indexe un seul `.md`.
-- `index_all_courses(courses_dir=None, reset=True)` → **fonction principale** :
-  1. liste les fichiers indexables (par défaut `data/courses/`) ;
-  2. pour chaque fichier : `load_document_text` → `_derive_title` →
-     `chunk_document_text` ; erreurs **capturées par fichier** dans `errors[]` ;
-  3. si `reset=True` : construit dans une collection **temporaire**
-     `course_chunks_building`, l'alimente (c'est là que se fait la lente
-     vectorisation), **puis** supprime l'ancienne collection et **renomme** la
-     temporaire (`collection.modify(name=...)`) — bascule quasi instantanée ;
-  4. retourne `{status: "success"|"empty", documents_indexed, chunks_indexed,
-     errors, message?}`.
-
-**Décisions.**
-- **Bascule par collection temporaire** : corrige un bug réel — l'ancienne
-  logique vidait la collection puis la reconstruisait, laissant une **fenêtre où
-  la base était vide** pendant la vectorisation (et le chargement du modèle) →
-  réponses « générale » intempestives. Désormais la base active n'est **jamais
-  vide**.
-- **Erreurs par fichier** : un PDF illisible n'empêche pas d'indexer les autres.
-- **`reset=True` par défaut** : la base active reflète exactement les fichiers
-  présents (ajouts **et** suppressions).
-
-**⚠️ Constat d'audit.** Incohérence mineure : `index_course` (legacy) utilise les
-constantes module relatives, tandis que `index_all_courses` utilise
-`settings.VECTORSTORE_PATH`/`COLLECTION_NAME`. Les deux pointent au même endroit
-quand le CWD = racine du projet, mais c'est un doublon à unifier.
+- **`sync_courses_index()`** — chemin normal (appelé par l'UI à chaque run) :
+  compare le dossier des cours au vectorstore via la métadonnée **`mtime`** ;
+  ajouté → indexé, supprimé → retiré, modifié → remplacé, inchangé → no-op.
+  Chaque cours n'est vectorisé qu'**une** fois.
+- **`index_all_courses(reset=True)`** — rebuild complet, **requis quand la
+  logique change** (découpage, embedding). Construit dans une collection
+  temporaire `course_chunks_building` puis **bascule** (renommage) : la base
+  active n'est jamais vide pendant la lente vectorisation.
+- `_derive_title` : premier `# H1` (.md) sinon nom de fichier nettoyé.
+- Erreurs capturées **par fichier** (un PDF illisible ne bloque pas les autres).
 
 ---
 
-### 5.6 `rag/retriever.py`
+### 5.6 `rag/retriever.py` & 5.7 `rag/reranker.py`
 
-**Rôle.** Lire la base : recherche sémantique + inventaire des cours.
+- `search_course(query, n_results=RETRIEVAL_TOP_K)` → vivier de 20 chunks
+  `{rank, text, source, chunk_index, title, section, page, distance}`.
+- `rerank_chunks` délègue à `rag.reranker.rerank` : **cross-encoder** lit chaque
+  paire (question × chunk) et reclasse finement ; garde `CONTEXT_TOP_K=5`.
+  **Repli propre** sur `chunks[:top_k]` si modèle indisponible/erreur (testé).
+  Chargement ~23 s au 1er usage d'un process (piste : préchargement).
+- `list_indexed_courses()` → cours distincts (conscience mono/multi-cours).
+- `get_course_chunks(title)` → tous les chunks ordonnés (résumé global).
+- Le **mode pédagogique reste calculé sur la distance d'embedding** (avant
+  rerank) — le reranker ne fait que réordonner le contexte.
 
-**Fonctions.**
-- `list_indexed_courses()` → parcourt **toutes** les métadonnées de la collection
-  et renvoie les cours **distincts** `{title, source}`. Indépendant de toute
-  recherche → permet à l'agent de **« connaître » ses cours** (conscience
-  mono/multi-cours).
-- `search_course(query, n_results=3)` → interroge la collection (même embedding +
-  cosinus) et renvoie une liste de chunks
-  `{rank, text, source, chunk_index, title, distance}`.
+### 5.8 `rag/source_formatter.py`
 
-**Décisions.** `search_course` renvoie aussi `title` (ajouté pour que le
-formatter puisse nommer un PDF sans structure Markdown). `list_indexed_courses`
-est tolérant (try/except → `[]` si la base n'existe pas encore).
-
-**⚠️ Constat d'audit.** `VECTORSTORE_PATH` est **relatif** (`"data/vectorstore"`)
-→ dépend du CWD. C'est sûr ici car l'interface fait `os.chdir(PROJECT_ROOT)` et
-les scripts se lancent depuis la racine, mais c'est une hypothèse implicite à
-connaître.
-
----
-
-### 5.7 `rag/source_formatter.py`
-
-**Rôle.** Transformer les chunks techniques en **indications de cours** lisibles
-`{course, part, excerpt, document_path}` — ce que l'étudiant peut voir.
-
-**Fonctions.**
-- `_clean_text` → retire le bruit Markdown (blocs/inline code, `* _ # > |`,
-  séparateurs) et normalise les espaces. Utilisé **des deux côtés** (extrait à
-  afficher **et** corps de section à matcher) pour une détection robuste.
-- `_parse_sections(source)` → découpe le document **source** en sections par
-  titres (`#`/`##`…). **Ne lit que `.md`/`.txt`** : pour un PDF (binaire), renvoie
-  `[]` (→ partie générique). Mise en cache par chemin.
-- `_find_section(probe, sections)` → rattache un texte à sa **section dominante**
-  par **scoring multi-ancres** (6 ancres de 40 car.) ; égalité → section la plus
-  haute.
-- `_make_excerpt(clean_text)` → extrait lisible : démarrage propre au début de
-  phrase si nécessaire (préfixe « … »), troncature entre `EXCERPT_MIN/MAX_CHARS`.
-- `format_course_indications(chunks)` → pour chaque chunk : nettoie, fabrique
-  l'extrait, détecte la section (sur une fenêtre `_SECTION_PROBE_CHARS = 400`,
-  **découplée** de la longueur d'affichage), déduit `course` (section → sinon
-  `title` du chunk → sinon nom de fichier), `part` (sinon « Section générale ») ;
-  **déduplique** par `(course, part)`.
-
-**Décisions.**
-- **Jamais** de distance/chunk/top_k côté étudiant.
-- Détection de section **découplée** de la longueur de l'extrait : quand les
-  extraits ont été raccourcis (60/90 car.), la détection serait devenue mauvaise
-  si elle utilisait l'extrait ; on lit donc 400 car. pour décider de la partie.
-- Vocabulaire « **Indication de la partie du cours** » plutôt que « Sources »
-  (objectif : renvoyer l'étudiant réviser, pas citer).
-
-**⚠️ Constat d'audit.** Pour les **PDF**, `_parse_sections` renvoie toujours `[]`
-→ `part = "Section générale"` systématiquement, et `course` vient du nom de
-fichier. La détection fine de partie ne marche donc bien que pour des `.md`/`.txt`
-**bien structurés** (et pas pour `rag_intro.md` à cause du problème de
-découpage, cf. 5.2).
+Chunks → indications `{course, part, excerpt, document_path}` dédupliquées par
+(course, part). Depuis le découpage structure-aware, la « partie » vient des
+**métadonnées d'indexation** (`section`, repli `Page N`, sinon « Section
+générale ») — plus aucun re-parse du document. Extraits courts (60-90 car.)
+avec démarrage propre en début de phrase.
 
 ---
 
-### 5.8 `services/hermes_adapter.py`
+### 5.9 `services/hermes_adapter.py`
 
-**Rôle.** Unique endroit qui sait **comment** appeler Hermes. Découple le « quoi »
-(générer une réponse) du « comment » (CLI).
-
-**Fonction.** `ask_hermes_with_skill(prompt, skill_name, timeout)` :
-- localise le binaire via `shutil.which("hermes")` ;
-- exécute `subprocess.run([hermes, "-z", prompt, "--skills", skill])` **sans
-  shell** (liste d'arguments → pas d'injection, prompt brut sûr) ;
-- renvoie `{status: "success"|"error"|"not_available", content, method, error}` ;
-- en cas d'absence/erreur/timeout/sortie vide : **sauvegarde le prompt** dans
-  `data/last_tutor_prompt.md` pour test manuel.
-
-**Décisions.**
-- **CLI one-shot `-z`** retenue après inspection (cf. doc d'archi) : c'est le seul
-  point d'entrée non-interactif officiel qui imprime **uniquement** la réponse
-  finale sur stdout, charge le skill et auto-approuve les outils.
-- Pistes **écartées** : `hermes gateway` (= messagerie, pas une API),
-  webhook (asynchrone), `mcp serve` (overkill), import du runtime (couplage
-  fragile au code du framework).
-- **Jamais** d'appel LLM direct (OpenRouter/DeepSeek) en remplacement silencieux.
-- N'importe **pas** le runtime Hermes → robustesse / non-couplage.
+`ask_hermes_with_skill(prompt, skill_name=DEFAULT, timeout=180, …)` :
+- `subprocess.run([hermes, "-z", prompt, "--skills", skill])` **sans shell** ;
+  depuis l'ajout du titrage, **`skill_name=None` → appel SANS skill** (usage
+  utilitaire neutre).
+- Retour uniforme `{status: success|error|not_available, content, method, error}`.
+- **Retry** (2 tentatives, backoff 2 s) sur timeout / code ≠ 0 / sortie vide —
+  les échecs observés étaient **intermittents** (provider). Pas de retry si le
+  binaire est absent.
+- Chaque échec est **journalisé** (`data/hermes_errors.log`, dev) ; le prompt est
+  sauvegardé (`last_tutor_prompt.md`) pour test manuel.
+- Décisions maintenues : CLI one-shot = seul point d'entrée non-interactif
+  propre ; gateway/webhook/MCP/import du runtime écartés ; jamais d'appel LLM
+  direct en remplacement silencieux.
 
 ---
 
-### 5.9 `agents/tutor_agent.py` — l'orchestrateur
+### 5.10 `agents/registry.py`
 
-**Rôle.** Cœur du système : transforme une question en réponse structurée, en
-coordonnant RAG, mode, indications, prompt et Hermes.
+`CAPABILITIES` : dataclass `Capability {name, description, inputs, outputs,
+preconditions}` pour **tutor**, **idp**, **content** (`preconditions=
+("artifact",)`) et **compose** (aucune précondition — c'est un **générateur**,
+pas un transformateur de source). Double usage : menu donné au planner LLM +
+base de la validation/réparation Python. *Ajouter un agent = ajouter une entrée
+ici + son module + son skill.*
 
-**Choix du mode.**
-- `_best_distance(chunks)` → plus petite distance (passage le plus proche).
-- `choose_tutor_mode(chunks)` → `course_grounded` si `< 0.45`, `mixed` si `< 0.65`,
-  sinon `general_tutor` (ou si aucun chunk).
+**Décision (2026-07-12).** La génération de documents n'a PAS été fusionnée
+dans `content` : la précondition `artifact` (sur laquelle repose la réparation
+déterministe) et la posture du skill (« fidèle à la source » vs « écris de
+l'original ») sont **opposées** — un agent séparé garde les deux contrats purs.
 
-**Construction du prompt (mode-dépendante).**
-- `_BASE_RULES` — règles **toujours** valables : français correct avec accents,
-  relecture, pas de détails techniques, ne pas inventer de source, **utiliser
-  l'historique** pour les questions de suivi, pas de préambule.
-- `_STRUCTURED_RULES` — **uniquement** en mode cours : structure imposée en
-  **5 intitulés en gras, sans numéro** (« Réponse / Explication / Exemple /
-  Indication de la partie du cours / Question de vérification »), point
-  « Indication » **concis** (où réviser, sans recopier l'extrait).
-- `_GENERAL_RULES` — en mode général : **pas** de plan en 5 points imposé ;
-  l'agent **s'adapte** (pédagogique pour une vraie question d'apprentissage,
-  bref et naturel pour une question banale/méta comme « as-tu accès à
-  internet ? »).
-- `_MODE_INTROS` — phrase d'intro par mode.
-- `_format_indications_block` — met les indications (cours/partie/extrait) dans
-  le prompt.
-- `_format_history_block(history, max_messages=6, max_assistant_chars=400)` —
-  rappelle les **6 derniers messages** (réponses tronquées à 400 car.).
-- `build_tutor_prompt(question, mode, chunks, indications, history)` — assemble :
-  skill + intro de mode + historique + question + contexte + règles
-  (base + structurées **ou** générales).
+### 5.11 `agents/artifact.py` & 5.12 `agents/document_store.py`
 
-**Extraction.**
-- `extract_verification_question(answer)` via `_VERIF_RE` — regex **tolérante**
-  au gras `**` et à une numérotation éventuelle (compat héritée).
+- **`DocumentArtifact`** (schema v2) = contrat commun. Deux blocs séparés :
+  `extraction` **déterministe** (status ok/needs_ocr/empty, langue FR/EN
+  heuristique, pages, sections `{section_id, heading, page_start, char_len,
+  structure_source, text}`, qualité good/low_structure) et `analysis` **enrichi
+  Hermes** (None tant que non analysé). La v2 stocke le **texte des sections**
+  dans l'artefact : l'agent contenu (et le tuteur ancré) lisent l'artefact,
+  jamais le PDF brut.
+- `extract_document(path)` ne lève pas pour un document illisible : l'état est
+  **encodé** dans `status` (needs_ocr / empty).
+- **`compute_doc_id`** = SHA-256 du **contenu** (16 hex, lecture par blocs) —
+  identité stable au renommage, détection de modification/doublon. Caches JSON
+  jamais bloquants (try/except OSError) ; artefact au mauvais `schema_version`
+  → ignoré (réanalyse).
 
-**Recherche enrichie & conscience des cours.**
-- `_build_retrieval_query(question, history, max_user_turns=2)` — préfixe la
-  requête de recherche avec les **2 dernières questions** de l'étudiant →
-  permet aux suivis vagues (« explique-le ») de retrouver le bon cours.
-- `_is_course_meta_question(question)` — détecte « cours / leçon / chapitre /
-  matière ».
-- `_clarification_result(question, courses)` — réponse **déterministe** (sans
-  Hermes, `mode = "clarify"`) listant les cours quand il faut désambiguïser.
+### 5.13 `agents/common.py`
 
-**Fonctions publiques.**
-- `answer_student_question(question, n_results, history)` — pipeline complet :
-  1. requête enrichie → `search_course` → `choose_tutor_mode` ;
-  2. **conscience des cours** : si `general_tutor` **et** question méta →
-     `≥2` cours → `_clarification_result` (retour anticipé, sans Hermes) ;
-     `1` cours → re-recherche ancrée sur ce cours, mode forcé `course_grounded` ;
-  3. indications (vides en `general_tutor`) ;
-  4. `build_tutor_prompt` → `ask_hermes_with_skill` ;
-  5. renvoie une structure complète **avec** `debug` (réservé développeur :
-     chunks, méthode d'appel, prompt, erreur).
-- `answer_student_question_for_ui(...)` — appelle la précédente et ne renvoie
-  **que** les champs propres (`status, mode, question, student_answer,
-  course_indications, verification_question`). **Aucun `debug`**. Si Hermes
-  échoue, `student_answer` contient un message clair.
-- CLI : `_print_result` (affichage compact, `--debug` pour le prompt) + `main`
-  (`python -m agents.tutor_agent "..."`), code de sortie ≠ 0 si échec.
-
-**Décisions.**
-- **Structure conditionnelle au mode** : corrige un défaut où le plan en 5 points
-  s'appliquait même aux questions non pédagogiques.
-- **Mémoire intra-conversation** via `history` (prompt + recherche).
-- **Conscience mono/multi-cours** : 1 cours → ancrage direct ; plusieurs →
-  question de clarification (économise même un appel Hermes).
-- **Double sortie** (complète vs UI) pour garantir que l'interface ne reçoit
-  jamais de détails techniques.
+`extract_json` : extraction tolérante du premier objet/tableau JSON d'une
+réponse LLM (fences ```json, texte autour, bornes englobantes). Retourne None
+si inexploitable — l'appelant décide (retry / repli).
 
 ---
 
-### 5.10 `tests_manual/test_tutor_agent.py`
+### 5.14 `agents/tutor_agent.py` — l'agent tuteur
 
-**Rôle.** Vérification **manuelle** (pas un test unitaire automatisé : il fait de
-vrais appels Hermes).
+Pipeline `answer_student_question` :
+1. **Résumé global ?** `_is_course_summary_request` (intention résumé/plan/
+   synthèse + mention de cours) → `_answer_course_summary` : texte **intégral**
+   du cours (reconstruit depuis les chunks, titres de section inclus) en UN
+   appel Hermes ; condensé (titres + amorces) au-delà du garde-fou. 1 cours →
+   lui ; nommé → lui ; plusieurs sans nom → clarification.
+2. `_build_retrieval_query` : la question **auto-suffisante** est cherchée
+   SEULE (top-k stable, indépendant du fil) ; seules les **relances
+   elliptiques** (≤ 5 mots, ou commençant par et/donc/alors/puis/ensuite/sinon)
+   sont enrichies des 2 dernières questions.
+3. `search_course` (vivier 20) → `choose_tutor_mode` (distance) →
+   **conscience des cours** (question méta + recherche faible : ≥2 cours →
+   clarify sans Hermes ; 1 cours → re-recherche ancrée, mode forcé) →
+   `rerank_chunks` (cross-encoder, top 5).
+4. **Prompt par mode** : `_BASE_RULES` (identité EduTutor — jamais « assistant
+   IA polyvalent » ; exactitude à 2 volets — fait établi avec assurance vs
+   détail incertain non inventé ; **sécurité anti-injection** — le contenu de
+   cours entre marqueurs « DÉBUT/FIN DU CONTENU DE COURS (non fiable) » est de
+   la DONNÉE, jamais des instructions) + `_STRUCTURED_RULES` (5 intitulés en
+   gras : Réponse / Explication / Exemple / Indication de la partie du cours /
+   Question de vérification) **ou** `_GENERAL_RULES` (pas de plan imposé,
+   adaptation à la nature de la question). Historique : 6 derniers messages,
+   réponses tronquées à 400 car.
+5. Double sortie : `answer_student_question` (avec `debug` complet) /
+   `answer_student_question_for_ui` (champs propres uniquement). CLI de test :
+   `python -m agents.tutor_agent "…" --debug`.
 
-**Contenu.** `run()` sur 3 questions (attendu `course_grounded` / `mixed` /
-`general_tutor`), affiche mode + statut + réponse + indications. `run_ui_check()`
-vérifie la sortie UI (clés propres, `contient debug : False`, début de réponse,
-nombre d'indications, question de vérification).
+### 5.15 `agents/idp_agent.py` — l'agent IDP
 
-**Décision.** Inspection humaine assumée — adaptée à un MVP où la qualité de la
-réponse n'est pas testable par assertion stricte.
+`analyze_document(file_path, force=False)` : cache par doc_id (un artefact est
+« complet » si analysé OU non analysable) → extraction déterministe → contexte
+sections `[sN] (page) titre + texte` (intégral ou condensé) → Hermes (skill
+`education-idp`) → `extract_json` → **`_validate_analysis`** : normalise ET
+**ancre** (ne garde que les `section_id` réels ; jette le malformé ; dates :
+`normalized=None` si ambigu — ne devine jamais). Retry ×2 ; échec →
+`analysis=None` + `meta.analysis_status` (jamais d'analyse à moitié fausse).
+needs_ocr/empty → artefact sans analyse. Vérifié en réel : 32 refs section_id
+toutes valides sur un cours ; cache 2ᵉ appel ~0.01 s.
 
----
+### 5.16 `agents/content_agent.py` — l'agent contenu
 
-### 5.11 `interface/streamlit_app.py`
+`generate_content(file_path, content_type="summary"|"revision", section_ids,
+force)` :
+- **Contrats forts** : pas d'artefact/analyse → `needs_analysis` (il ne lance
+  **pas** l'IDP lui-même — c'est l'orchestrateur qui répare) ; extraction ≠ ok →
+  `not_processable`.
+- Lit les sections **depuis l'artefact** (contrat v2), jamais le brut. Peut
+  cibler des `section_ids` ; les sections utilisées sont tracées
+  **déterministiquement** (Python sait ce qu'il a envoyé).
+- Digest de l'analyse IDP (thèmes/termes) injecté pour ancrer ; instructions
+  distinctes par type (résumé structuré vs fiche de révision — « n'invente pas
+  de pièges ni de conseils génériques »).
+- Cache par (doc_id, type, hash des options). Stratégie taille = V1
+  (intégral / condensé).
 
-**Rôle.** Toute l'expérience étudiant (chat, gestion des cours, historique,
-persistance, style).
+### 5.17 `agents/compose_agent.py` — l'agent rédaction (+ révision)
 
-**Amorçage.**
-- Ajoute `PROJECT_ROOT` au `sys.path` puis `os.chdir(PROJECT_ROOT)` (pour que les
-  chemins relatifs du RAG résolvent).
-- Constantes : `COURSES_DIR`, `UPLOAD_TYPES`, `STATIC_COURSES_DIR/URL`,
-  `CONVERSATIONS_PATH`, `EXAMPLE_QUESTIONS`, `MODE_INFO` (libellés FR des modes),
-  `ERROR_MESSAGE`.
+- **`generate_document(instructions, course_context=None, force=False)`** :
+  document original en Markdown (commençant par `# titre`), skill
+  `education-compose` (peut mobiliser des connaissances générales ; si un
+  extrait de cours est fourni, il est la source primaire, délimité et traité en
+  DONNÉE — anti-injection). Titre = premier `# H1`, repli sur la consigne.
+  Cache par hash(consigne + contexte) sous `data/generated/`.
+- **`revise_document(previous_markdown, instruction, title)`** (phase 2,
+  itération façon Canvas) : envoie le **document existant** + la consigne
+  (« modifie et renvoie le document COMPLET révisé ») — **réutilise** le
+  contenu au lieu de regénérer depuis la source. Cache par
+  hash(`REVISE::consigne` + contenu).
 
-**CSS (thème sombre uniforme « façon ChatGPT »).**
-- Variables `--edu-*` adaptées au sombre.
-- Badges de mode (pastilles), labels, cartes.
-- Renommage du bouton de l'uploader en « Ajouter mes cours » (via `::after`).
-- Conteneurs d'historique (`.st-key-conv_history`, hauteur plafonnée + scroll) et
-  de cours (`.st-key-course_list`).
-- **Chat épuré** : avatars masqués, bulles transparentes ; **questions étudiant
-  alignées à droite** dans une bulle gris ardoise via le sélecteur
-  `:has([data-testid="stChatMessageAvatarUser"])`.
+### 5.18 `agents/orchestrator.py` — l'orchestrateur
 
-**Gestion des cours.**
-- `list_course_titles()` — noms des fichiers de `data/courses/`.
-- `sync_static_courses()` — recopie les cours dans `interface/static/courses/`
-  (ajouts **et** suppressions) pour qu'ils soient servis en HTTP.
-- `course_url(name)` — URL `app/static/courses/<nom url-encodé>`.
-- `save_uploaded_courses(files)` — écrit (écrase) les fichiers déposés.
-- `courses_signature()` — empreinte (nom + mtime) du dossier.
-- `ensure_index_up_to_date()` — **auto-indexation** : ne réindexe que si
-  l'empreinte a changé (toast de résultat / d'erreur).
+- **`handle(question, history, selected_doc, use_planner, last_deliverable)`** :
+  1. **Révision** (avant tout) : `last_deliverable` existe ET `_RE_REVISE`
+     matche → `_handle_revise` (conserve type/doc d'origine, nouveau titre).
+  2. **Plan** : `use_planner=True` (chemin UI actuel) → `_plan_with_llm`
+     (menu du registre + documents `[analysé|non analysé]` + historique →
+     plan JSON validé : agents inconnus filtrés, documents résolus, `compose`
+     traité à part — doc optionnel, jamais de clarify) ; None → filet
+     déterministe `_classify_to_plan`.
+  3. `_repair_preconditions` : insère `idp` avant content / tutor-ancré-section
+     si le doc n'est pas analysé (sans doublon).
+  4. `_execute_all` → `_compose` : réponse **unique** ; content/compose réussi →
+     **livrable** ; `analyze` → présentation IDP + carte résumé ; échec →
+     première erreur remontée.
+- **Table d'intention déterministe** (filet) : compose (verbe d'écriture + type
+  de document) → analyze → revision → summary → explain_section → question
+  (tuteur par défaut). `clarify` si document requis introuvable ;
+  `no_document` si aucun cours.
+- **Résolution de document** : `_match_doc` matche les tokens **distinctifs**
+  du nom de fichier (les tokens communs à tout le corpus — `cybersecurity`,
+  `2026`… — sont soustraits via `_corpus_common_tokens` ; tokenisation
+  `[a-z0-9]{3,}` pour que `_` sépare). Corrigé le 2026-07-09 : le planner
+  renvoie le nom de fichier complet, qui matchait tous les cours → clarify
+  indu.
+- `resolve_sections` : sélecteur libre (« attaques réseau ») → section_ids par
+  matching de tokens sur les headings.
+- `run_action(action, doc)` : chemin déterministe pour actions explicites
+  (conservé, plus appelé par l'UI actuelle).
+- `_trace` : intent/steps/statuts (dev). `steps_run` : agents exécutés, affichés
+  dans l'UI. `trace.intent == "planner"` = le planner a réellement routé.
 
-**Affichage des réponses.**
-- `render_mode_badge(mode)` — pastille traduite (`course_grounded` → « Réponse
-  basée sur ton cours », etc.).
-- `render_assistant_message(message)` — **source d'affichage unique** = le texte
-  de la réponse (qui contient déjà, en mode cours, l'indication et la question de
-  vérification). On n'ajoute **plus** de carte/bloc séparés → fini le **doublon**.
+### 5.19 `agents/presenter.py` & 5.20 `agents/titler.py`
 
-**Discussions multiples + persistance.**
-- `load_conversations()` / `save_conversations()` — JSON `data/conversations.json`
-  (`{conversations, next_conv_id, current_id}`), tolérant aux fichiers
-  absents/corrompus.
-- `init_conversation_state()` — restaure l'état persistant au démarrage, sinon
-  crée une discussion vierge ; garde-fous sur les identifiants.
-- `create_conversation`, `current_conversation`, `make_title` (titre = 1ʳᵉ
-  question tronquée), `start_new_discussion` (ne crée pas de doublon si la
-  courante est vide).
-- `submit_question(question)` — **affiche la question immédiatement**, puis
-  l'indicateur d'attente, puis la réponse **en ligne** (pas de rerun) ; persiste
-  les deux messages. Passe l'**historique** (avant ajout) à l'agent.
-- `render_history()` — liste cliquable des discussions **ayant du contenu** (plus
-  récente en haut ; active mise en avant ; clic → rouvrir et continuer).
-
-**`render_sidebar()`** — « Nouvelle discussion » (haut), section « Mes cours (N) »
-(uploader à clé dynamique pour **se vider après upload**, recherche, liste
-scrollable de liens « ouvrir dans un nouvel onglet »), puis historique.
-
-**`main()`** — `init_conversation_state` → `ensure_index_up_to_date` →
-`sync_static_courses` → sidebar → en-tête → exemples → fil de la discussion
-active → `st.chat_input` → `submit_question` → `save_conversations()`.
-
-**Décisions (résumé).** Appel **exclusif** à `answer_student_question_for_ui` ;
-zéro détail technique ; UI épurée type ChatGPT ; persistance JSON ; uploader qui
-se réinitialise ; cours ouvrables en nouvel onglet via fichiers statiques.
-
-**⚠️ Constats d'audit.**
-- **CSS mort** : `.edu-card`, `.edu-verify`, `.edu-note`, `.edu-section-label`
-  ne sont plus utilisés (les fonctions de rendu séparées ont été supprimées) →
-  à nettoyer.
-- Le rendu **bulle à droite** et le **masquage des avatars** reposent sur des
-  `data-testid` internes de Streamlit (`stChatMessageAvatarUser`,
-  `stChatMessageContent`) → **dépendant de la version** ; à re-vérifier en cas de
-  mise à jour de Streamlit.
-- `save_conversations()` s'exécute **à chaque run** (y compris reruns de recherche)
-  → petites écritures fréquentes. Acceptable pour un MVP mono-utilisateur.
-- `data/conversations.json` **grossit sans limite** et conserve le **contenu**
-  des échanges (à ne pas committer si sensible). Les discussions « Nouvelle
-  discussion » vides peuvent être persistées.
-- Le service statique suppose la racine `interface/static/` (servie à
-  `/app/static/`) — confirmé fonctionnel, mais c'est une convention Streamlit à
-  garder en tête.
-
----
-
-### 5.12 `.streamlit/config.toml`
-
-- `[server] fileWatcherType = "none"` — **coupe le surveillant de fichiers** :
-  `transformers` (tiré par `sentence-transformers`) générait des centaines de
-  `ModuleNotFoundError: torchvision` **inoffensifs** quand le watcher inspectait
-  ses sous-modules. Conséquence : **pas de rechargement auto** → relancer l'app
-  après une édition.
-- `[server] enableStaticServing = true` — sert `interface/static/` à
-  `/app/static/` (ouverture des cours en nouvel onglet).
-- `[theme]` — thème **sombre uniforme** : `backgroundColor="#212327"` (chat),
-  `secondaryBackgroundColor="#17181c"` (sidebar, plus foncée), `textColor`.
-
-> Note : `torchvision` n'est **pas** nécessaire (module vision) ; le tuteur ne
-> traite que du texte.
-
----
-
-### 5.13 `requirements.txt`
-
-Contenu : `streamlit`, `chromadb`. **Incomplet** (voir §7).
+- **presenter** : artefact IDP → Markdown étudiant (type de doc, pages, parties,
+  structure, thèmes, objectifs, notions clés, consignes, dates, avertissements).
+  **Filtre les section_ids** que Hermes glisse parfois dans les textes
+  (`_strip_section_ids`, garantie côté Python).
+- **titler** : `generate_title(first_message)` → titre 3-6 mots via Hermes
+  **sans skill** (un skill à persona répondrait au lieu de titrer). Nettoyage
+  (1ʳᵉ ligne, sans guillemets/ponctuation, ≤ 48 car.). Best-effort : None si
+  échec → l'appelant garde le titre de repli.
 
 ---
 
-### 5.14 Fichiers *legacy* (non utilisés par l'app actuelle)
+### 5.21 `interface/streamlit_app.py` — l'UI
 
-- `rag/tutor_prompt.py` — ancien générateur de prompt : `build_tutor_prompt`
-  (avec chunks + distances + structure en anglais « Answer/Explanation/Source(s) »)
-  et `save_prompt` vers `data/last_tutor_prompt.md`. Contient même une ligne
-  « Consignes : » dupliquée. **Remplacé** par `agents.tutor_agent.build_tutor_prompt`
-  + `services.hermes_adapter`.
-- `rag/tutor_cli.py` — ancien CLI qui affichait les chunks et générait le fichier
-  prompt (flux **manuel** : on collait le prompt dans Hermes). **Remplacé** par
-  l'appel automatique.
+Docstring d'en-tête : hypothèse **mono-utilisateur** assumée et documentée.
 
-**Décision d'audit.** Ces fichiers sont **conservés** (consigne « ne rien
-casser/supprimer ») mais n'ont **aucun rôle** dans le flux actuel. À retirer lors
-d'un futur nettoyage si l'on assume qu'ils ne servent plus de référence.
+- **Chat** : `submit_question` → `orchestrator.handle(use_planner=True,
+  last_deliverable=_last_deliverable(conv))`. Au **1er message**, le titre de
+  la discussion est généré **en parallèle** de la réponse (thread ; le titre
+  ~25-70 s se termine pendant la réponse ≥ 60 s → latence cachée), puis
+  `st.rerun()`. Repli : 1er message tronqué (`make_title`).
+- **Rendu d'une réponse** : badge de mode (`MODE_INFO`, libellés pédagogiques) +
+  **chips agents** (`AGENT_INFO` : 🎓 Tuteur / 🔎 Analyse (IDP) / 📝 Contenu /
+  ✍️ Rédaction / ❓ Clarification, ordre réel d'exécution, séparateur flèche) +
+  contenu + **carte livrable** éventuelle.
+- **Carte livrable** (`render_deliverable`) : conteneur bordé, en-tête
+  (📄 résumé / 🎴 fiche / 📝 document + titre), aperçu défilant
+  (`st.container(height=340)`), ⤢ **Agrandir** (`st.dialog`), téléchargements
+  `.docx`/`.md` (+ `.pdf` si `PDF_AVAILABLE`). `seed` = index du message → clés
+  de widgets uniques, cohérentes entre rendu live et rejeu.
+- **Persistance** : le message assistant stocke `{content, mode, agents,
+  deliverable?}` dans `data/conversations.json` (plafond `MAX_CONVERSATIONS=200`,
+  purge des plus anciens par dernière activité, jamais le fil ouvert).
+- **Sidebar** : « Nouvelle discussion » ; « Mes cours (N) » (uploader à clé
+  dynamique qui se vide après upload, recherche, liste scrollable, ouverture en
+  nouvel onglet via fichiers statiques, suppression avec confirmation inline) ;
+  **historique façon Claude** (2026-07-12) : police 14 px, lignes compactes,
+  ellipsis 1 ligne, date en infobulle, `#` gris en CSS `::before` (pas dans le
+  label — Markdown le prendrait pour un titre), **plus de `type="primary"`**
+  (= plus d'orange) — l'actif est surligné en gris via un style injecté ciblant
+  `.st-key-conv_<id>`.
+- **Gotcha CSS** documenté : `justify-content: flex-start` sur le `<button>` ne
+  suffit pas — les conteneurs internes de Streamlit recentrent le texte ; il
+  faut forcer `text-align/width` sur `button > div`, `stMarkdownContainer`, `p`.
+- **Indexation** : `ensure_index_up_to_date()` → `sync_courses_index()` à chaque
+  run (no-op si rien ne change) ; `sync_static_courses()` pour les copies HTTP.
 
----
+### 5.22 `interface/exporters.py`
 
-### 5.15 `docs/agent_tutor_architecture.md`
+- `to_docx_bytes` : parsing Markdown minimal mais suffisant (titres `#`, listes
+  à puces/numérotées, **gras**, séparateurs) → python-docx.
+- `to_pdf_bytes` : markdown → HTML (extensions tables/fenced_code) → xhtml2pdf,
+  CSS A4 intégré. **Import protégé** (`PDF_AVAILABLE`) : l'app fonctionne sans
+  les libs PDF, le bouton n'apparaît que si elles sont là.
+- `safe_filename` : titre → nom de fichier propre.
 
-Document de conception antérieur (le « pourquoi » de l'architecture, les 3 modes,
-la méthode d'appel Hermes, ce que voit l'étudiant vs le développeur). Le présent
-audit le complète et le met à jour (embedding multilingue, persistance, etc.).
+### 5.23 Skills Hermes (`~/.hermes/skills/education/`, hors repo)
+
+| Skill | Posture |
+|---|---|
+| `education-tutor` | tuteur pédagogique (+ section sécurité/contenu non fiable, ajoutée avec autorisation explicite, backup `.bak`) |
+| `education-idp` | analyste documentaire, JSON strict ancré section_id, ne devine pas les dates |
+| `education-content` | créateur de ressources d'étude, fidèle au document, pas d'invention |
+| `education-compose` | rédacteur de documents originaux, `# titre` en tête, connaissances générales OK, anti-injection |
+| `education-orchestrator` | planner : ne répond jamais, propose un plan JSON `{steps, needs_clarification}` |
+
+### 5.24 Autres
+
+- `tests_manual/test_tutor_agent.py` : 3 questions représentatives + contrôle
+  de la sortie UI (pas de `debug`). Inspection humaine assumée (vrais appels
+  Hermes). ⚠️ ne couvre que le tuteur — rien sur l'orchestrateur/IDP/contenu/
+  compose (voir §7).
+- `.streamlit/config.toml` : watcher off (bruit torchvision de transformers →
+  relancer l'app après édition), static serving on, thème sombre uniforme.
+- `evaluation/`, `tools/` : vides (emplacements réservés).
+- Fichiers legacy `rag/tutor_prompt.py` / `rag/tutor_cli.py` : **supprimés**
+  (dette D4 réglée) — constat de l'audit V1 résolu.
 
 ---
 
 ## 6. Les grandes décisions techniques (et pourquoi)
 
-1. **Appeler Hermes en CLI one-shot (`hermes -z … --skills`)** — seul point
-   d'entrée non-interactif propre ; isolé dans `hermes_adapter.py` (si la méthode
-   change un jour, **un seul fichier** bouge). Gateway/webhook/MCP/import écartés.
-2. **Séparation stricte des couches** — UI → agent → (RAG / formatter / Hermes).
-   L'UI n'appelle **que** `answer_student_question_for_ui`.
-3. **Deux sorties de l'agent** (complète avec `debug` / UI propre) — garantit
-   qu'aucun détail technique n'atteint l'étudiant.
-4. **Embedding multilingue + distance cosinus** — rend les questions FR
-   efficaces sur des cours EN ; seuils recalibrés (0.45 / 0.65) et placés en
-   config car dépendants du modèle/corpus.
-5. **Fonction d'embedding centralisée** — indexer et retriever **doivent**
-   partager exactement le même modèle.
-6. **Indexation par bascule de collection temporaire** — supprime la « fenêtre
-   vide » pendant la vectorisation (cause de « Réponse générale » intempestives).
-7. **Auto-indexation par empreinte** — réindexe uniquement quand les fichiers
-   changent.
-8. **Structure de réponse conditionnelle au mode** — plan en 5 points (sans
-   numéros, en gras) pour le cours ; réponse libre/naturelle pour le hors-sujet
-   et les questions méta.
-9. **Mémoire intra-conversation** — 6 derniers messages dans le prompt + 2
-   dernières questions dans la requête de recherche (suivis « explique-le »).
-10. **Conscience des cours** — 1 cours → ancrage direct ; plusieurs → clarifier
-    (sans appeler Hermes). Pas de mémoire **transversale** (choix assumé : la
-    connaissance vient des cours, pas des autres chats).
-11. **Affichage unique des indications** — la réponse Hermes est la seule source
-    d'affichage (fin du doublon carte/bloc).
-12. **Persistance JSON des discussions** — simple, lisible, suffisant en
-    mono-utilisateur.
-13. **Cours ouvrables en nouvel onglet** — via le service de fichiers statiques
-    de Streamlit (et non un aperçu intégré).
-14. **UI épurée façon ChatGPT** — thème sombre uniforme, sans avatars/bulles,
-    questions à droite, question affichée immédiatement pendant le « thinking ».
+1. **Architecture 3 couches, sans fusion** — `hermes-agent/` = moteur (jamais
+   modifié) ; `~/.hermes/skills/education/` = les personas d'agents ;
+   `hermes-education/` = l'app (RAG + agents Python + orchestration + UI).
+   Étendre = ajouter un skill, pas toucher au framework.
+2. **Agents Python fins + skills de posture** — la logique (validation,
+   ancrage, caches, contrats) vit en Python **déterministe et testable** ; le
+   LLM ne fait que l'enrichissement/rédaction, sous contrainte.
+3. **Orchestrateur « planner LLM propose, Python dispose »** — le plan vient de
+   Sonnet (souplesse de formulation), mais Python **valide contre le registre,
+   répare les préconditions (insertion IDP), exécute et compose**. Filet
+   déterministe si le plan est inutilisable. (Historique : le déterministe fut
+   le chemin primaire sous owl-alpha, qui routait mal ; la bascule
+   `use_planner=True` date du passage à Sonnet, 2026-07-09.)
+4. **`DocumentArtifact` = contrat unique** avec séparation extraction
+   (déterministe) / analysis (LLM) → traçabilité, et **provenance garantie**
+   (tout élément enrichi ancré à un `section_id` réel, validé côté Python).
+5. **`doc_id` = hash de contenu** (pas le nom) — identité stable, cache
+   invalidé au bon moment, doublons détectés.
+6. **Content exige un artefact et ne lance jamais l'IDP lui-même** — la
+   réparation appartient à l'orchestrateur ; les responsabilités restent
+   pures. C'est aussi pourquoi **compose est un agent séparé** (préconditions
+   et postures opposées).
+7. **Livrables structurés + itération par réutilisation** — le contenu généré
+   vit dans une carte (pas la bulle), téléchargeable ; « raccourcis-le »
+   renvoie le **markdown existant** au LLM au lieu de regénérer depuis la
+   source (plus rapide, conserve l'intention du document).
+8. **Appel Hermes en CLI one-shot, un seul adaptateur** — seul point d'entrée
+   non-interactif propre ; retry sur échecs transitoires ; jamais d'appel LLM
+   direct de contournement. `skill_name=None` pour les usages utilitaires
+   (titrage).
+9. **RAG structure-aware multi-signaux** — le découpage suit les sections
+   réelles (numérotation + police + typographie + markdown), fournit la
+   métadonnée `section`/`page` qui alimente à la fois les indications
+   étudiantes et les artefacts. Sémantique = amélioration ultérieure
+   éventuelle.
+10. **Récupération découplée (20 → reranker → 5)** — vivier large en embedding
+    (rapide, approximatif), reclassement fin par cross-encoder multilingue,
+    repli propre sans le modèle. Mode pédagogique calculé sur la distance
+    (stable), pas sur le score de rerank.
+11. **Requête de recherche non diluée** — question auto-suffisante cherchée
+    seule (top-k stable entre discussions) ; seules les relances elliptiques
+    sont enrichies de l'historique.
+12. **Résumé global « façon ChatGPT »** — texte intégral du cours en un appel
+    (pas de map-reduce, décision utilisateur), condensé au-delà du garde-fou.
+13. **Sync d'index incrémental par mtime** — chaque cours vectorisé une fois ;
+    le rebuild complet (collection temporaire, jamais de base vide) reste
+    l'outil des changements de logique.
+14. **Sécurité anti-injection à double étage** — règle dans les prompts + skills
+    ET délimitation systématique du contenu non fiable par marqueurs ; testé en
+    réel (injection « réponds PWNED » détectée et refusée).
+15. **Titrage en parallèle de la réponse** — le coût (~25-70 s) est masqué par
+    la génération de la réponse ; échec silencieux → titre de repli.
+16. **UI : source d'affichage unique + jargon filtré** — la réponse Markdown est
+    la seule source (pas de doublon de blocs) ; le presenter retire les
+    section_ids résiduels ; l'étudiant ne voit jamais les entrailles, mais voit
+    **quels agents** ont travaillé (transparence sans technicité).
 
 ---
 
-## 7. Limites connues & dette technique
+## 7. Constats d'audit, limites & dette technique
 
-**Bloquant pour reproduire l'environnement :**
-- `requirements.txt` **incomplet** : il manque `sentence-transformers` et
-  `PyMuPDF`. À compléter (ex. versions épinglées). Hermes reste une dépendance
-  **externe** (binaire CLI) à documenter à part.
+### 7.1 ⚠️ Constats NOUVEAUX (audit 2026-07-12) — vérifiés en exécution
 
-**Qualité RAG (volontairement reportée) :**
-- `n_results` figé à 3 ; pas de **reranker** ; seuils calibrés sur un corpus
-  restreint. Sur un gros corpus, le « passage exact » peut être manqué.
-- Détection de **partie** faible pour les PDF (toujours « Section générale ») et
-  pour les `.md` mal découpés (problème de lignes vides → chunks non alignés aux
-  titres).
-- Pas de **résumé global** d'un cours (le mode mono-cours s'appuie sur quelques
-  passages, pas l'intégralité).
+1. ~~**Sur-capture du regex de révision (`_RE_REVISE`)**~~ — **✅ CORRIGÉ le
+   2026-07-12.** Constat initial : dès qu'un livrable existait, tout message
+   contenant un verbe d'édition (« explique pourquoi on **ajoute** un
+   pare-feu », « **corrige** mon exercice ») partait en révision du livrable,
+   avant le planner. Correctif : `_is_revision_request` exige, en plus du
+   verbe, que la consigne **vise le livrable** — clitique (« raccourcis-le »),
+   référence explicite (« ce document », « la fiche », « le résumé »), objet
+   de structure documentaire (« une section », « la conclusion »), ou consigne
+   d'édition **nue** (« simplifie », « plus court stp »). Vérifié sur 18 cas
+   (13 révisions légitimes conservées, 5 faux positifs éliminés).
+2. ~~**Sur-capture du regex compose (`_RE_COMPOSE`)**~~ — **✅ CORRIGÉ le
+   2026-07-12.** Constat initial : « **fais** un résumé du **document** CM1 »
+   matchait compose (verbe + mot « document ») et partait en rédaction d'un
+   document original. Correctif : quand le type capté est **générique**
+   (« document », « texte ») ET que la demande contient un mot de résumé/fiche,
+   la branche compose s'efface au profit des branches résumé/fiche. Les types
+   spécifiques (rapport, exposé, dissertation…) restent prioritaires pour
+   compose. Vérifié : les 3 faux positifs corrigés, aucun des 5 cas compose
+   légitimes ne régresse (y compris « rédige un rapport sur l'analyse des
+   risques », qui reste compose).
+3. ~~**`_target_doc` : condition morte**~~ — **✅ NETTOYÉ le 2026-07-12.**
+   Le `or True` qui neutralisait le test déictique et le tuple `_DEICTIC`
+   inutilisé ont été retirés ; le comportement réel (document sélectionné =
+   contexte actif, utilisé dès qu'aucun document n'est nommé) est désormais
+   explicite dans le code et la docstring. Comportements vérifiés inchangés
+   (nommé / sélectionné / ambigu).
+4. ~~**Docstring d'en-tête de `streamlit_app.py` obsolète**~~ — **✅ CORRIGÉ
+   le 2026-07-12** : décrit maintenant la couche réellement appelée
+   (orchestrator + titler + exporters) et ce que voit l'étudiant (badge de
+   mode, agents intervenus, cartes livrables).
+5. ~~**Commentaire obsolète dans `tutor_agent.py`**~~ — **✅ CORRIGÉ le
+   2026-07-12** : le commentaire décrit le reranker cross-encoder réel (avec
+   repli), plus le « placeholder ».
+6. ~~**`chunker.py` : legacy interne**~~ — **✅ NETTOYÉ le 2026-07-12.**
+   `chunk_text_by_paragraph`, `chunk_document_text`, `chunk_markdown_file`,
+   `read_markdown_file`, `split_long_text` supprimés (aucun usage externe,
+   vérifié par grep) ; le module ne garde que le chemin actuel
+   (`chunk_segments` + `_split_text`, 240 → 131 lignes). Le bloc `__main__`
+   est une vraie démo : `python -m rag.chunker <document>` (testé sur un PDF
+   réel : 59 segments → 59 chunks).
+7. ~~**`_answer_course_summary(question, history)`**~~ — **✅ NETTOYÉ le
+   2026-07-12** : paramètre `history` retiré (site d'appel mis à jour) ; la
+   docstring explique pourquoi l'historique n'est pas utilisé (le cours
+   entier EST le contexte).
+8. **Latence UX** — planner + agents = ~2-5 min sur un document froid
+   (3 appels LLM séquentiels) ; révision ~2 min ; titrage masqué mais le
+   `join(timeout=90)` peut ajouter jusqu'à 90 s dans le pire cas où le titre
+   est plus lent que la réponse. Le cache amortit fortement les répétitions.
+   Piste : modèle plus rapide (Haiku) pour planner/titrage.
+9. **Validation visuelle incomplète** — les cartes livrables, le flux de
+   révision et le titrage en thread n'ont **pas** été observés dans un run UI
+   réel de bout en bout (validés par les données + boot HTTP 200 + screenshots
+   Playwright de la sidebar uniquement).
 
-**Cohérence / propreté :**
-- Commentaires obsolètes dans `settings.py` (extraits « 250-350 » vs 60/90 ;
-  « L2 » vs cosinus).
-- **CSS mort** dans l'interface (`.edu-card`, `.edu-verify`, `.edu-note`,
-  `.edu-section-label`).
-- Doublon de constantes/logique entre `index_course` (legacy) et
-  `index_all_courses`.
-- Fichiers legacy `tutor_prompt.py` / `tutor_cli.py` inutilisés.
+### 7.2 Limites connues (assumées / reportées par décision)
 
-**Robustesse / exploitation :**
-- L'UI dépend de `data-testid` internes Streamlit (bulle droite, masquage
-  avatars) → fragile aux montées de version.
-- `conversations.json` sans limite de taille ni purge ; contient le contenu des
-  échanges (confidentialité ; à `.gitignore` sous git).
-- Hypothèse **mono-utilisateur** (état en session + fichiers partagés ; pas de
-  gestion de concurrence).
-- `os.chdir(PROJECT_ROOT)` est un effet de bord global du process.
-- Injection de prompt possible via le **contenu d'un cours** (un PDF malveillant
-  pourrait tenter d'influencer Hermes) — risque faible en usage personnel, à
-  garder en tête si ouverture multi-utilisateurs.
+- **Ancrage compose limité** : un cours nommé n'ancre la rédaction que s'il est
+  **déjà analysé** (pas d'IDP à la volée — compose n'a pas de précondition).
+- **Titres de sections bruités sur les slides PDF** : l'heuristique de titres
+  laisse passer des fragments (« SecurityWeek, July 2025 ») dans « Structure du
+  document » ; la page sert de filet. Limite documentée du multi-signaux.
+- **Pas de compréhension visuelle** (schémas, diagrammes) : OCR = texte
+  seulement ; nécessite un modèle de vision (emplacement `auxiliary.vision`
+  côté Hermes à câbler plus tard). Image sans texte → statut `empty`, pas
+  d'invention.
+- **Qualité RAG** (embedding, n_results, seuils) : volontairement laissée en
+  l'état — à revoir seulement si la perf le justifie.
+- **Mono-utilisateur** : état en session + fichiers partagés, pas de
+  concurrence. Multi-utilisateurs = phase de fin de projet.
+- **`data-testid` Streamlit** : le rendu (bulles, avatars, uploader) dépend de
+  sélecteurs internes — revalider à chaque montée de version (borne `<2.0`).
+- **Itération sans versionnage** : la révision d'un livrable crée un nouveau
+  message (l'ancien reste dans le fil) — pas d'historique de versions par
+  livrable ni d'édition ciblée type Canvas.
+- **Tests** : uniquement `tests_manual` sur le tuteur V1 ; aucun test (même
+  manuel) sur l'orchestrateur, l'IDP, le contenu, compose, les exporters. Les
+  vérifications de cette phase ont été faites en session (scripts ad hoc), pas
+  capitalisées.
+- **Sécurité** : défense anti-injection en profondeur (règles + délimitation),
+  testée ; pas de filtrage du contenu des documents (choix assumé) ; risque
+  résiduel faible en usage personnel.
 
-**Pistes futures déjà identifiées :**
-- **Profil étudiant** résumé (la « bonne » version d'une mémoire transversale).
-- Titres de cours plus lisibles (au lieu du nom de fichier).
-- Embedding/reranker plus puissants si la pertinence l'exige.
+### 7.3 Constats de l'audit précédent — état
+
+| Constat V1 (2026-06-09) | État |
+|---|---|
+| `requirements.txt` incomplet | ✅ réglé (complet, borné, commenté) |
+| Chunks non alignés aux titres ; « Section générale » pour les PDF | ✅ réglé (découpage structure-aware + métadonnées section/page) |
+| Pas de reranker ; n_results=3 figé | ✅ réglé (vivier 20 + cross-encoder → 5) |
+| Pas de résumé global | ✅ réglé (texte intégral en un appel + garde-fou) |
+| Commentaires obsolètes settings.py (60-90, L2/cosinus) | ✅ réglé |
+| CSS mort ; doublon legacy indexer ; fichiers tutor_prompt/tutor_cli | ✅ réglé (D3-D7) |
+| `os.chdir(PROJECT_ROOT)` effet de bord global | ✅ réglé (chemins via settings) |
+| conversations.json sans limite ni .gitignore | ✅ réglé (plafond 200 + ignoré) |
+| Injection via contenu de cours | ✅ traité (défense double étage, testée) |
+| Réindexation complète à chaque changement | ✅ réglé (sync incrémental mtime) |
 
 ---
 
 ## 8. Comment lancer le projet
 
 ```bash
-# 1) Dépendances (le requirements.txt actuel est incomplet)
-pip install streamlit chromadb sentence-transformers PyMuPDF
-#   + Hermes Agent installé et configuré (binaire `hermes` dans le PATH,
-#     modèle/provider configurés côté Hermes), skill `education-tutor` présent
-#     dans ~/.hermes/skills/education/education-tutor/SKILL.md
+# 0) Prérequis externes
+#    - Hermes Agent installé (binaire `hermes` dans le PATH), modèle configuré
+#      (~/.hermes/config.yaml : anthropic/claude-sonnet-4-6, provider anthropic,
+#      clé dans ~/.hermes/.env), et les 5 skills education-* présents dans
+#      ~/.hermes/skills/education/
+#    - Tesseract (OCR) : sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
+
+# 1) Dépendances Python
+.venv/bin/pip install -r requirements.txt
 
 # 2) Interface web (point d'entrée principal)
-python -m streamlit run interface/streamlit_app.py
-#   → http://localhost:8501  (redémarrage complet requis après édition :
-#     le watcher est désactivé)
+.venv/bin/streamlit run interface/streamlit_app.py
+#    → http://localhost:8501 (watcher désactivé : relancer après édition du code)
+#    L'indexation des cours est automatique (sync incrémental au démarrage).
 
-# 3) Agent en ligne de commande (debug)
-python -m agents.tutor_agent "Pourquoi le RAG réduit-il les hallucinations ?" --debug
+# 3) Agents en CLI (debug)
+python -m agents.tutor_agent "Qu'est-ce que la kill chain ?" --debug
+python -m agents.idp_agent "data/courses/<fichier>"            # analyse (--json, --force)
+python -m agents.content_agent "data/courses/<fichier>" revision
+python -m agents.compose_agent "écris un exposé d'une page sur ..."
 
-# 4) Indexation manuelle (sinon auto au démarrage de l'UI)
-python -m rag.indexer
-python -c "from rag.indexer import index_all_courses; print(index_all_courses('data/samples'))"
+# 4) Indexation manuelle
+python -m rag.indexer          # REBUILD complet (obligatoire si la logique RAG change)
 
-# 5) Test manuel
+# 5) Test manuel du tuteur
 python -m tests_manual.test_tutor_agent
 ```
 
-**Au premier lancement**, le modèle d'embedding multilingue (~470 Mo) est
-téléchargé une fois. L'indexation construit `data/vectorstore/`. Les cours
-déposés via l'UI vont dans `data/courses/`, sont auto-indexés, et recopiés dans
-`interface/static/courses/` pour être ouvrables dans le navigateur.
+**Au premier lancement**, l'embedding multilingue (~470 Mo) puis le reranker
+(~470 Mo) sont téléchargés une fois (cache HF). Un appel Hermes normal prend
+60-180 s (Sonnet) ; les caches (artefacts, contenus générés) rendent les
+répétitions quasi instantanées.
 
 ---
 
-*Fin de l'audit. Toute section marquée ⚠️ signale un constat (obsolescence, dette
-ou hypothèse) à traiter lors d'une prochaine itération ; rien de tout cela
-n'empêche le fonctionnement actuel du MVP.*
+*Fin de l'audit. État des constats §7.1 : 1-2 (routage) **corrigés** ; 3-7
+(nettoyage) **faits** — tous le 2026-07-12, vérifiés en exécution. Restent 8
+(latence, pistes identifiées) et 9 (validation visuelle end-to-end à faire).
+Rien n'empêche le fonctionnement actuel.*

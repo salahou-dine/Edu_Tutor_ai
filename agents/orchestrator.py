@@ -69,8 +69,6 @@ def list_documents() -> list[dict]:
 # --- Résolution du document cible -------------------------------------------
 
 _COMMON_TOKENS = {"cours", "document", "fichier", "pdf", "spring", "printemps"}
-_DEICTIC = ("ce document", "ce cours", "ce pdf", "ce fichier", "ce support",
-            "le document", "le cours", "du document", "de ce", "ce doc")
 
 
 def _doc_tokens(filename: str) -> set[str]:
@@ -100,12 +98,12 @@ def _match_doc(question: str, documents: list[dict]) -> dict | None:
 
 
 def _target_doc(question: str, documents: list[dict], selected: str | None) -> dict | None:
-    """Document visé : nommé dans la question, sinon sélectionné, sinon l'unique."""
+    """Document visé : nommé dans la question, sinon le sélectionné (contexte
+    actif de l'UI, quand il existe), sinon l'unique document disponible."""
     named = _match_doc(question, documents)
     if named:
         return named
-    ql = question.lower()
-    if selected and (any(d in ql for d in _DEICTIC) or True):
+    if selected:
         sel = next((d for d in documents if d["filename"] == selected), None)
         if sel:
             return sel
@@ -154,6 +152,42 @@ _RE_REVISE = re.compile(
     r"r[ée]g[ée]n[èe]re|mets? à jour|simplifie)\b",
     re.IGNORECASE,
 )
+# Le verbe d'édition seul ne suffit PAS (« explique pourquoi on AJOUTE un
+# pare-feu » n'est pas une révision) : il faut aussi que la consigne VISE le
+# livrable. Trois signaux acceptés :
+#   1. clitique attaché au verbe : « raccourcis-le », « améliore-la » ;
+#   2. référence explicite au livrable : « ce document », « la fiche »,
+#      « le résumé », « ta version »… ;
+#   3. objet de structure documentaire : « une section », « la conclusion »…
+_RE_REVISE_TARGET = re.compile(
+    r"(-l[ea]\b"
+    r"|\b(?:ce|cette|le|la|ton|ta|mon|ma) +(?:document|doc|fiche|r[ée]sum[ée]|"
+    r"texte|version|rapport|expos[ée]|note|synth[èe]se|contenu|livrable)\b"
+    r"|\b(?:une?|la|le|l['’]|des?) *(?:sections?|parties?|paragraphes?|"
+    r"introduction|conclusion|titres?|exemples?|points?)\b"
+    r")",
+    re.IGNORECASE,
+)
+# Consigne d'édition « nue » (sans autre objet) : cible forcément le livrable
+# courant (« simplifie », « plus court stp », « régénère »). Une éventuelle
+# suite libre (« corrige mon exercice ») NE matche pas -> pas une révision.
+_RE_REVISE_BARE = re.compile(
+    r"^\s*(?:raccourcis?|raccourcir|abr[èe]ge|allonge|d[ée]veloppe|reformule|"
+    r"simplifie|am[ée]liore|refais|reprends|r[ée]g[ée]n[èe]re|r[ée][ée]cris|corrige|"
+    r"plus (?:court|long|simple|formel|d[ée]taill[ée]|clair))"
+    r"(?:[- ](?:le|la|ça|moi))?"
+    r"(?:\s+(?:stp|svp|s['’]il te pla[îi]t|un peu|encore|plus))*\s*[!.…]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_revision_request(question: str) -> bool:
+    """Vrai si la demande est une RÉVISION du livrable courant : verbe d'édition
+    ET cible identifiable (clitique / référence / structure), ou consigne nue."""
+    ql = question.lower()
+    if not _RE_REVISE.search(ql):
+        return False
+    return bool(_RE_REVISE_TARGET.search(ql) or _RE_REVISE_BARE.match(ql))
 # Rédaction d'un document original : un VERBE d'écriture + un TYPE de document.
 # (le verbe est exigé pour ne pas capter « résume le document » -> résumé.)
 _RE_COMPOSE = re.compile(
@@ -202,12 +236,21 @@ def _classify_to_plan(question: str, documents: list[dict], selected: str | None
     # 0) Rédaction d'un document original -> agent compose (source OPTIONNELLE).
     #    On n'ancre QUE si un cours est explicitement NOMMÉ (_match_doc), jamais
     #    par défaut : compose doit pouvoir générer librement.
-    if _RE_COMPOSE.search(ql):
-        step = {"agent": "compose", "instructions": question}
-        named = _match_doc(question, documents)
-        if named is not None:
-            step["doc"] = named
-        return {"intent": "compose", "steps": [step]}
+    #    GARDE-FOU : « document »/« texte » sont des types GÉNÉRIQUES — si la
+    #    demande contient aussi un mot de résumé/fiche (« fais un résumé du
+    #    document CM1 »), c'est une ressource d'étude, pas une rédaction ->
+    #    on laisse les branches résumé/fiche traiter. Les types spécifiques
+    #    (rapport, exposé, dissertation…) restent prioritaires pour compose.
+    compose_match = _RE_COMPOSE.search(ql)
+    if compose_match:
+        generic_type = compose_match.group(2).lower() in ("document", "texte")
+        study_resource = bool(_RE_SUMMARY.search(ql) or _RE_REVISION.search(ql))
+        if not (generic_type and study_resource):
+            step = {"agent": "compose", "instructions": question}
+            named = _match_doc(question, documents)
+            if named is not None:
+                step["doc"] = named
+            return {"intent": "compose", "steps": [step]}
 
     # 1) Analyse complète d'un document -> IDP puis Content (résumé).
     if _RE_ANALYZE.search(ql):
@@ -610,8 +653,10 @@ def handle(question, history=None, selected_doc=None, use_planner=False,
                 "doc": None, "steps_run": [], "trace": {}}
 
     # Itération sur le livrable courant (AVANT toute planification) : si l'étudiant
-    # demande une modification et qu'un livrable existe, on le RÉUTILISE.
-    if last_deliverable and _RE_REVISE.search(cleaned.lower()):
+    # demande une modification QUI VISE le livrable, on le RÉUTILISE. Le verbe
+    # d'édition seul ne suffit pas (cf. _is_revision_request) : une question qui
+    # contient « ajoute »/« corrige » sans viser le livrable va au routage normal.
+    if last_deliverable and _is_revision_request(cleaned):
         return _handle_revise(cleaned, last_deliverable)
 
     documents = list_documents()

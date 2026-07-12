@@ -1,12 +1,15 @@
 """
-EduTutor — interface étudiant du tuteur académique.
+EduTutor — interface étudiant du tuteur académique multi-agents.
 
-L'interface n'appelle QUE la couche agent propre :
-    from agents.tutor_agent import answer_student_question_for_ui
+L'interface n'appelle QUE la couche orchestration propre :
+    from agents import orchestrator          # chat -> orchestrator.handle(...)
+    from agents.titler import generate_title # titre de discussion (1er échange)
+    from interface.exporters import ...      # exports des livrables (docx/md/pdf)
 
 Elle n'affiche jamais d'éléments développeur (chunks, distances, top_k, prompt
-Hermes, vectorstore, logs). L'étudiant voit : sa question, la réponse du tuteur,
-l'indication de la partie du cours, la question de vérification, et l'historique.
+Hermes, section_id, vectorstore, logs). L'étudiant voit : sa question, la
+réponse (badge de mode + agents intervenus), les cartes livrables
+téléchargeables, et l'historique des discussions.
 
 PÉRIMÈTRE (hypothèse assumée) : application MONO-UTILISATEUR. L'état vit en
 session Streamlit et les données (cours, vectorstore, conversations.json) sont
