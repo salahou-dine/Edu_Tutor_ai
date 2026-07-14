@@ -74,12 +74,33 @@ MAX_CONVERSATIONS = 200
 # ses propres cours, en nombre variable — on ne sait pas lesquels ni sur quoi il
 # va interroger. Ces suggestions marchent quel que soit le cours et montrent ce
 # que le tuteur sait faire (cf. persona EduTutor).
-EXAMPLE_QUESTIONS = [
-    "Résume-moi un de mes cours",
-    "Explique-moi une notion que je n'ai pas comprise",
-    "Interroge-moi pour réviser",
-    "Aide-moi à résoudre un exercice",
+# Écran d'accueil orienté OBJECTIF : chaque carte compose une phrase envoyée au
+# chat (l'orchestrateur route déjà tout ça — zéro nouveau backend).
+# - needs="course" : demande sur quel cours (pastilles) puis remplit {course} ;
+# - needs="text"   : mini-champ pré-préfixé (« Explique-moi … »).
+ACTION_CARDS = [
+    {"key": "exam", "title": "Préparer mon examen",
+     "sub": "on démarre par un résumé", "needs": "course",
+     "template": "Aide-moi à préparer mon examen : fais-moi un résumé structuré du cours {course}."},
+    {"key": "revise", "title": "Réviser un cours",
+     "sub": "un résumé clair et structuré", "needs": "course",
+     "template": "Fais-moi un résumé du cours {course}."},
+    {"key": "quiz", "title": "M'entraîner",
+     "sub": "le tuteur t'interroge", "needs": "course",
+     # NB : éviter « réviser/révision/fiche » ici, sinon la demande partirait vers
+     # l'agent Contenu (fiche) au lieu du tuteur qui doit POSER des questions.
+     "template": "Interroge-moi sur le cours {course} pour tester mes connaissances."},
+    {"key": "sheet", "title": "Créer une fiche",
+     "sub": "une fiche de révision", "needs": "course",
+     "template": "Fais-moi une fiche de révision du cours {course}."},
+    {"key": "notion", "title": "Comprendre une notion",
+     "sub": "une explication pédagogique", "needs": "text",
+     "prefix": "Explique-moi", "placeholder": "Quelle notion ? (ex. la défense en profondeur)"},
+    {"key": "write", "title": "Rédiger un document",
+     "sub": "rapport, exposé, note…", "needs": "text",
+     "prefix": "Rédige-moi", "placeholder": "Quoi ? (ex. un rapport d'une page sur les pare-feux)"},
 ]
+_ACTION_BY_KEY = {a["key"]: a for a in ACTION_CARDS}
 
 # Libellé pédagogique (jamais le nom technique du mode) + classe CSS du badge.
 MODE_INFO = {
@@ -153,6 +174,50 @@ st.markdown(
         color: var(--edu-muted);
         font-size: 0.95rem;
         margin-bottom: 0.9rem;
+    }
+
+    /* Cartes d'intention de l'écran d'accueil (orienté objectif) */
+    .st-key-action_cards button {
+        height: 5rem;
+        white-space: normal !important;
+        border: 1px solid rgba(255, 255, 255, 0.09) !important;
+        background: rgba(255, 255, 255, 0.02) !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        font-size: 1rem !important;
+        line-height: 1.25 !important;
+        transition: border-color .12s, background .12s;
+    }
+    .st-key-action_cards button:hover {
+        border-color: var(--edu-accent) !important;
+        background: rgba(94, 177, 194, 0.10) !important;
+    }
+    .st-key-action_cards [data-testid="stCaptionContainer"] {
+        text-align: center;
+        margin-top: -0.35rem;
+        margin-bottom: 0.7rem;
+    }
+    /* Pastilles de sélection de cours */
+    .st-key-course_pills button {
+        border-radius: 999px !important;
+        border: 1px solid var(--edu-accent) !important;
+        background: transparent !important;
+        font-weight: 600 !important;
+    }
+    .st-key-course_pills button:hover {
+        background: rgba(94, 177, 194, 0.14) !important;
+    }
+    /* Bouton d'action principal « Nouvelle discussion » : accent turquoise de la
+       marque (jamais l'orange du thème). */
+    .st-key-new_discussion button {
+        background: var(--edu-accent) !important;
+        border: 1px solid var(--edu-accent) !important;
+        color: #0d1b1f !important;
+        font-weight: 650 !important;
+    }
+    .st-key-new_discussion button:hover {
+        background: #74c2d1 !important;
+        border-color: #74c2d1 !important;
     }
 
     /* Badge de mode pédagogique (discret) */
@@ -633,6 +698,7 @@ def create_conversation() -> int:
         }
     )
     st.session_state.current_id = cid
+    st.session_state.pop("intent_action", None)  # repart sur les cartes d'accueil
     return cid
 
 
@@ -812,6 +878,7 @@ def render_history() -> None:
                 help=stamp or None,
             ):
                 st.session_state.current_id = conv["id"]  # rouvrir + continuer
+                st.session_state.pop("intent_action", None)
                 st.rerun()
 
 
@@ -838,7 +905,8 @@ def render_sidebar() -> None:
         st.markdown("## 🎓 EduTutor")
 
         # --- Nouvelle discussion (l'ancienne reste dans l'historique) ---
-        if st.button("➕ Nouvelle discussion", use_container_width=True, type="primary"):
+        if st.button("➕ Nouvelle discussion", key="new_discussion",
+                     use_container_width=True):
             start_new_discussion()
             st.rerun()
 
@@ -883,7 +951,6 @@ def render_sidebar() -> None:
                             if st.button(
                                 "Oui, supprimer",
                                 key=f"confyes_{name}",
-                                type="primary",
                                 use_container_width=True,
                             ):
                                 delete_course(name)
@@ -922,6 +989,103 @@ def render_sidebar() -> None:
         render_history()
 
 
+# --- Écran d'accueil orienté objectif (Phase A) -----------------------------
+
+def _short_course_label(filename: str) -> str:
+    """Libellé court et lisible d'un cours pour une pastille (nom complet en infobulle)."""
+    stem = filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").strip()
+    return stem if len(stem) <= 30 else stem[:29].rstrip() + "…"
+
+
+def _course_choices() -> list[dict]:
+    return [{"label": _short_course_label(name), "filename": name}
+            for name in list_course_titles()]
+
+
+def render_welcome_actions() -> str | None:
+    """Accueil : cartes d'objectif -> compose un prompt envoyé au chat.
+
+    Retourne le prompt à soumettre (ou None). L'étape « préciser » (choix du
+    cours / saisie libre) est mémorisée dans st.session_state['intent_action'].
+    """
+    action_key = st.session_state.get("intent_action")
+    if action_key:
+        action = _ACTION_BY_KEY.get(action_key)
+        if action is None:
+            st.session_state.pop("intent_action", None)
+        elif action["needs"] == "course":
+            return _render_course_choice(action)
+        else:
+            return _render_text_prompt(action)
+        return None
+
+    st.markdown("<div class='edu-title'>Qu'est-ce qu'on fait aujourd'hui ?</div>",
+                unsafe_allow_html=True)
+    st.markdown("<div class='edu-subtitle'>Choisis un objectif, ou pose "
+                "directement ta question en bas 👇</div>", unsafe_allow_html=True)
+
+    with st.container(key="action_cards"):
+        cols = st.columns(3)
+        for i, action in enumerate(ACTION_CARDS):
+            with cols[i % 3]:
+                if st.button(action["title"],
+                             key=f"action_{action['key']}", use_container_width=True):
+                    return _on_action_clicked(action)
+                st.caption(action["sub"])
+
+    if not _course_choices():
+        st.caption("💡 Ajoute un cours dans la barre latérale pour débloquer la "
+                   "révision, les fiches et les quiz.")
+    return None
+
+
+def _on_action_clicked(action: dict) -> str | None:
+    """Clic sur une carte : soumet direct (1 cours), ou passe à l'étape « préciser »."""
+    if action["needs"] == "course":
+        choices = _course_choices()
+        if len(choices) == 1:
+            return action["template"].format(course=choices[0]["filename"])
+        if not choices:
+            return None  # aucun cours : le message d'aide sous les cartes suffit
+    st.session_state["intent_action"] = action["key"]
+    st.rerun()
+
+
+def _render_course_choice(action: dict) -> str | None:
+    st.markdown(f"<div class='edu-title'>{action['title']}</div>",
+                unsafe_allow_html=True)
+    st.markdown("<div class='edu-subtitle'>Sur quel cours ?</div>", unsafe_allow_html=True)
+    choices = _course_choices()
+    with st.container(key="course_pills"):
+        cols = st.columns(min(3, len(choices)) or 1)
+        for i, choice in enumerate(choices):
+            with cols[i % len(cols)]:
+                if st.button(choice["label"], key=f"pill_{action['key']}_{i}",
+                             help=choice["filename"], use_container_width=True):
+                    st.session_state.pop("intent_action", None)
+                    return action["template"].format(course=choice["filename"])
+    if st.button("← Retour", key="course_back"):
+        st.session_state.pop("intent_action", None)
+        st.rerun()
+    return None
+
+
+def _render_text_prompt(action: dict) -> str | None:
+    st.markdown(f"<div class='edu-title'>{action['title']}</div>",
+                unsafe_allow_html=True)
+    with st.form(key=f"form_{action['key']}", clear_on_submit=True):
+        text = st.text_input(action["title"], placeholder=action["placeholder"],
+                             label_visibility="collapsed")
+        submitted = st.form_submit_button("Envoyer")
+    if st.button("← Retour", key="text_back"):
+        st.session_state.pop("intent_action", None)
+        st.rerun()
+    if submitted and text.strip():
+        st.session_state.pop("intent_action", None)
+        return f"{action['prefix']} {text.strip()}"
+    return None
+
+
 # --- Application ------------------------------------------------------------
 
 def main() -> None:
@@ -931,28 +1095,16 @@ def main() -> None:
 
     render_sidebar()
 
-    st.markdown(
-        "<div class='edu-title'>Pose ta question au tuteur</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div class='edu-subtitle'>EduTutor t'explique le cours, t'indique la "
-        "partie à revoir et vérifie ta compréhension.</div>",
-        unsafe_allow_html=True,
-    )
-
-
-    # Suggestions de questions (cliquables).
-    st.markdown("**Exemples de questions :**")
+    conv = current_conversation()
     pending_question = None
-    example_cols = st.columns(2)
-    for index, example in enumerate(EXAMPLE_QUESTIONS):
-        with example_cols[index % 2]:
-            if st.button(example, key=f"example_{index}", use_container_width=True):
-                pending_question = example
+
+    # Discussion vierge -> écran d'accueil orienté objectif (cartes d'intention).
+    # Dès qu'il y a du contenu, l'accueil s'efface et le fil de chat prend la place.
+    if not conv["messages"]:
+        pending_question = render_welcome_actions()
 
     # Échanges de la discussion active.
-    for index, message in enumerate(current_conversation()["messages"]):
+    for index, message in enumerate(conv["messages"]):
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
                 render_assistant_message(message, seed=str(index))
