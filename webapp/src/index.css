@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fond « Zyricon » : dégradé violet profond, léger halo lumineux. */
+body {
+  @apply text-ink antialiased;
+  background:
+    radial-gradient(1100px 500px at 70% -10%, rgba(139, 92, 246, 0.16), transparent 60%),
+    radial-gradient(800px 420px at 10% 110%, rgba(139, 92, 246, 0.10), transparent 60%),
+    linear-gradient(160deg, #171120 0%, #1a1326 55%, #150f1e 100%);
+  min-height: 100vh;
+}
+
+/* Panneau « verre dépoli ». */
+.glass {
+  @apply bg-surface border border-surface-border rounded-xl2 backdrop-blur-sm;
+}
+
+/* Barre de défilement discrète. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+/* Rendu Markdown des réponses et livrables (pas de plugin typography). */
+.md-body h1 { @apply text-lg font-bold mt-4 mb-2; }
+.md-body h2 { @apply text-base font-bold mt-4 mb-1.5; }
+.md-body h3 { @apply text-sm font-semibold mt-3 mb-1; }
+.md-body p { @apply my-2; }
+.md-body ul { @apply list-disc pl-5 my-2 space-y-1; }
+.md-body ol { @apply list-decimal pl-5 my-2 space-y-1; }
+.md-body strong { @apply font-semibold text-ink; }
+.md-body code { @apply px-1 py-0.5 rounded bg-white/10 text-[0.85em]; }
+.md-body pre { @apply p-3 rounded-lg bg-black/30 overflow-x-auto my-2; }
+.md-body pre code { @apply bg-transparent p-0; }
+.md-body blockquote { @apply border-l-2 border-accent/50 pl-3 my-2 text-muted; }
+.md-body hr { @apply border-surface-border my-4; }
+.md-body a { @apply text-accent-soft underline; }
+.md-body table { @apply my-2 text-xs; }
+.md-body th, .md-body td { @apply border border-surface-border px-2 py-1; }
