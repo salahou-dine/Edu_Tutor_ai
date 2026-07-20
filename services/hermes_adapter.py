@@ -21,11 +21,15 @@ transitoire du provider, sortie vide). L'appel est donc réessayé
 au développeur (`HERMES_ERROR_LOG`) — jamais montré à l'étudiant.
 """
 
+import codecs
+import os
+import select
 import shutil
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from config import settings
 
@@ -69,12 +73,80 @@ def _log_failure(
         pass
 
 
+def _safe_delta(on_delta, value) -> None:
+    """Notifie le consommateur de tokens sans jamais casser l'appel."""
+    try:
+        on_delta(value)
+    except Exception:
+        pass
+
+
+def _run_streaming(cmd: list, timeout: int, on_delta) -> SimpleNamespace:
+    """
+    Exécute Hermes en STREAMANT sa sortie (nécessite le patch oneshot :
+    HERMES_ONESHOT_STREAM=1). Protocole : les tokens arrivent au fil de l'eau ;
+    un octet NUL (\\x00) marque une frontière de tour (le texte partiel est à
+    jeter) ; le DERNIER segment est la réponse canonique.
+
+    `on_delta(texte)` reçoit chaque token ; `on_delta(None)` = remise à zéro.
+    Retourne un objet compatible subprocess (stdout = segment final, returncode,
+    stderr). Lève TimeoutExpired au-delà du budget (process tué).
+    """
+    _safe_delta(on_delta, None)  # remise à zéro (utile au retry)
+    env = dict(os.environ, HERMES_ONESHOT_STREAM="1", PYTHONUNBUFFERED="1")
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
+    )
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    segments = [""]
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                proc.kill()
+                proc.wait()
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            ready, _, _ = select.select([proc.stdout], [], [], min(remaining, 1.0))
+            if not ready:
+                continue
+            data = os.read(proc.stdout.fileno(), 4096)
+            if not data:
+                break
+            text = decoder.decode(data)
+            if not text:
+                continue  # séquence UTF-8 incomplète : on attend la suite
+            for index, part in enumerate(text.split("\x00")):
+                if index > 0:  # frontière NUL -> nouveau segment
+                    segments.append("")
+                    _safe_delta(on_delta, None)
+                if part:
+                    segments[-1] += part
+                    _safe_delta(on_delta, part)
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            segments[-1] += tail
+        proc.wait(timeout=10)
+        stderr = (proc.stderr.read() or b"").decode("utf-8", errors="replace")
+        return SimpleNamespace(
+            stdout=segments[-1], returncode=proc.returncode, stderr=stderr
+        )
+    finally:
+        for stream in (proc.stdout, proc.stderr):
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+
 def ask_hermes_with_skill(
     prompt: str,
     skill_name: str = settings.DEFAULT_SKILL_NAME,
     timeout: int = settings.HERMES_TIMEOUT_SECONDS,
     max_attempts: int | None = None,
     backoff: float | None = None,
+    model: str | None = None,
+    on_delta=None,
 ) -> dict:
     """
     Envoie un prompt à Hermes via la CLI one-shot avec le skill préchargé.
@@ -83,6 +155,10 @@ def ask_hermes_with_skill(
     non nul, sortie vide) jusqu'à `max_attempts` tentatives, avec une pause
     `backoff` entre chacune. Ne réessaie PAS si le binaire `hermes` est
     introuvable (un retry n'y changerait rien).
+
+    `on_delta` (optionnel) : callback de STREAMING — reçoit les tokens de la
+    réponse au fil de l'eau (`None` = remise à zéro du texte partiel). Le
+    retour final reste identique : `content` est la réponse canonique.
 
     Retour :
         {
@@ -112,7 +188,11 @@ def ask_hermes_with_skill(
 
     # Liste d'arguments (pas de shell) -> pas d'injection, prompt brut sûr.
     # skill_name=None -> appel Hermes SANS skill (utilitaire neutre, ex. titrage).
+    # model -> `-m <id>` : surcharge le modèle pour CET appel (ex. modèle rapide
+    # pour le planner/titrage ; fonctionne car le provider anthropic est natif).
     cmd = [hermes_bin, "-z", prompt]
+    if model:
+        cmd += ["-m", model]
     if skill_name:
         cmd += ["--skills", skill_name]
 
@@ -121,12 +201,15 @@ def ask_hermes_with_skill(
     for attempt in range(1, max_attempts + 1):
         start = time.monotonic()
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            if on_delta is not None:
+                result = _run_streaming(cmd, timeout, on_delta)
+            else:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
         except subprocess.TimeoutExpired:
             elapsed = time.monotonic() - start
             error = f"Délai dépassé ({timeout}s) lors de l'appel à Hermes."

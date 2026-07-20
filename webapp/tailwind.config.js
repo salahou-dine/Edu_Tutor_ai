@@ -4,17 +4,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Palette « Zyricon » : violet profond, verre dépoli, accent lumineux.
-        ink: "#ece9f4",
-        muted: "#9a93ab",
+        // Palette « futuriste premium » : noir aubergine, surfaces presque
+        // noires, bordures lavande fines, accents violet néon + bleu électrique.
+        // Contraste volontairement faible (ambiance cinématographique).
+        ink: "#d9d3e4",
+        muted: "#8d8399",
         accent: {
-          DEFAULT: "#8b5cf6",
-          soft: "#a78bfa",
+          DEFAULT: "#9d6bff", // violet néon
+          soft: "#bb9bff",
+        },
+        electric: {
+          DEFAULT: "#4da3ff", // bleu électrique (accents secondaires)
+          soft: "#8ec5ff",
         },
         surface: {
-          DEFAULT: "rgba(255,255,255,0.04)",
-          hover: "rgba(255,255,255,0.08)",
-          border: "rgba(255,255,255,0.09)",
+          DEFAULT: "rgba(15, 11, 21, 0.52)",   // presque noir, translucide
+          hover: "rgba(157, 107, 255, 0.08)",  // effleurement violet discret
+          border: "rgba(196, 181, 253, 0.14)", // lavande, fine
         },
       },
       borderRadius: {

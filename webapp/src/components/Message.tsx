@@ -1,6 +1,7 @@
+import { Paperclip } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-import type { ChatMessage } from "../lib/api";
+import { api, type ChatMessage } from "../lib/api";
 import { AGENT_INFO, MODE_LABELS } from "../lib/labels";
 import { DeliverableCard } from "./DeliverableCard";
 
@@ -12,7 +13,26 @@ interface Props {
 export function Message({ message, pdfAvailable }: Props) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1.5">
+        {(message.attachments ?? []).length > 0 && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {message.attachments!.map((attachment) => (
+              <button
+                key={attachment.filename}
+                onClick={() =>
+                  window.open(api.attachmentFileUrl(attachment.filename), "_blank")
+                }
+                title={`${attachment.filename} — cliquer pour ouvrir`}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs
+                           bg-surface border border-surface-border text-muted
+                           hover:text-ink hover:bg-surface-hover transition-colors"
+              >
+                <Paperclip size={11} className="text-accent-soft" />
+                <span className="max-w-48 truncate">{attachment.filename}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="max-w-[80%] rounded-2xl rounded-br-md bg-accent/20
                         border border-accent/25 px-4 py-2.5 text-sm">
           {message.content}
@@ -31,7 +51,7 @@ export function Message({ message, pdfAvailable }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           {modeLabel && (
             <span className="px-2.5 py-0.5 rounded-full text-[0.68rem] font-semibold
-                             bg-accent/15 text-accent-soft border border-accent/20">
+                             bg-electric/10 text-electric-soft border border-electric/25">
               {modeLabel}
             </span>
           )}

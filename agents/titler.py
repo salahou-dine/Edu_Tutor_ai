@@ -9,6 +9,7 @@ garde son titre de repli (premier message tronqué).
 
 import re
 
+from config import settings
 from services.hermes_adapter import ask_hermes_with_skill
 
 _TITLE_TIMEOUT = 60
@@ -40,7 +41,11 @@ def generate_title(first_message: str) -> str | None:
         f"Demande :\n{text[:1000]}\n\n"
         "Réponds UNIQUEMENT par le titre."
     )
-    result = ask_hermes_with_skill(prompt, skill_name=None, timeout=_TITLE_TIMEOUT)
+    # Quelques mots à produire -> modèle RAPIDE (le titre est prêt bien avant la réponse).
+    result = ask_hermes_with_skill(
+        prompt, skill_name=None, timeout=_TITLE_TIMEOUT,
+        model=settings.HERMES_FAST_MODEL or None,
+    )
     if result["status"] != "success":
         return None
     return _clean_title(result["content"])

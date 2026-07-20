@@ -1,5 +1,17 @@
 # Audit technique — Hermes Education (EduTutor)
 
+> **⚠️ NOTE DE BASCULE (2026-07-19)** — depuis cet audit, l'interface a changé :
+> l'UI officielle est désormais le **front web React** (`webapp/`) adossé à une
+> **API FastAPI** (`api/` : chat en SSE avec **streaming des réponses** et
+> timeline de progression, pièces jointes, Bibliothèque des médias, exports).
+> L'interface Streamlit décrite aux §5.21-5.22 est **archivée**
+> (`archive/streamlit_app.py`) ; `exporters.py` a déménagé vers `services/`.
+> Le streaming a nécessité un patch opt-in du framework Hermes
+> (`docs/hermes-oneshot-streaming.patch`), et le planner/titrage tournent sur
+> un modèle rapide (`HERMES_FAST_MODEL`). Le cœur (`agents/`, `rag/`,
+> `services/`, `config/`) décrit ici reste exact. Voir `README.md` pour le
+> lancement actuel.
+
 > Document d'audit exhaustif. Objectif : qu'à la seule lecture de ce document tu
 > comprennes l'intégralité du projet **comme si tu l'avais écrit toi-même** —
 > contexte, architecture, rôle de chaque fichier, et **chaque décision** prise

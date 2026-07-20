@@ -1,28 +1,34 @@
-import { GraduationCap, Hash, LibraryBig, Plus } from "lucide-react";
+import { BookOpen, GraduationCap, Hash, LibraryBig, Plus } from "lucide-react";
 
 import type { ConversationSummary, CourseDoc } from "../lib/api";
 
 interface Props {
   conversations: ConversationSummary[];
   documents: CourseDoc[];
+  deliverableCount: number;
   activeId: number | null;
   libraryActive: boolean;
+  coursesActive: boolean;
   onNewChat: () => void;
   onOpenConversation: (id: number) => void;
   onOpenLibrary: () => void;
+  onOpenCourses: () => void;
 }
 
 export function Sidebar({
   conversations,
   documents,
+  deliverableCount,
   activeId,
   libraryActive,
+  coursesActive,
   onNewChat,
   onOpenConversation,
   onOpenLibrary,
+  onOpenCourses,
 }: Props) {
   return (
-    <aside className="w-72 shrink-0 h-screen p-4 flex flex-col gap-5">
+    <aside className="w-72 shrink-0 h-full p-4 flex flex-col gap-5">
       {/* Marque */}
       <div className="flex items-center gap-2.5 px-2 pt-1">
         <span className="glass p-2 flex items-center justify-center">
@@ -65,7 +71,7 @@ export function Sidebar({
         ))}
       </nav>
 
-      {/* Bibliothèque des cours (upload / suppression / recherche) */}
+      {/* Bibliothèque = les MÉDIAS GÉNÉRÉS (fiches, résumés, documents) */}
       <button
         onClick={onOpenLibrary}
         className={`glass flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium
@@ -77,6 +83,21 @@ export function Sidebar({
       >
         <LibraryBig size={16} className="text-accent-soft" />
         Bibliothèque
+        <span className="ml-auto text-xs text-muted">{deliverableCount}</span>
+      </button>
+
+      {/* Mes cours = les SOURCES (upload / suppression / ouverture) */}
+      <button
+        onClick={onOpenCourses}
+        className={`glass flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium
+                    transition-colors ${
+                      coursesActive
+                        ? "bg-surface-hover border-accent/40"
+                        : "hover:bg-surface-hover"
+                    }`}
+      >
+        <BookOpen size={16} className="text-accent-soft" />
+        Mes cours
         <span className="ml-auto text-xs text-muted">{documents.length}</span>
       </button>
     </aside>

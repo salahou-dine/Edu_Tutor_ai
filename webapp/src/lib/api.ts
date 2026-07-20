@@ -11,10 +11,16 @@ export interface CourseDoc {
 }
 
 export interface Deliverable {
-  type: "summary" | "revision" | "document";
+  /** attachment = pièce jointe du chat (Bibliothèque uniquement). */
+  type: "summary" | "revision" | "document" | "attachment";
   title: string;
   doc: string;
   markdown: string;
+}
+
+export interface AttachmentMeta {
+  filename: string;
+  size: number;
 }
 
 export interface ChatMessage {
@@ -24,6 +30,7 @@ export interface ChatMessage {
   mode?: string;
   agents?: string[];
   deliverable?: Deliverable;
+  attachments?: AttachmentMeta[];
 }
 
 export interface ConversationSummary {
@@ -40,12 +47,24 @@ export interface Conversation {
   messages: ChatMessage[];
 }
 
+/** Entrée de la Bibliothèque : un livrable + son origine. */
+export interface LibraryItem extends Deliverable {
+  conv_id: number;
+  conv_title: string;
+  created_at: number | null;
+  index: number;
+  /** Nombre de versions dans la lignée (révisions successives regroupées). */
+  version_count?: number;
+}
+
 /** Événements SSE émis par POST /conversations/{id}/messages (Phase 3). */
 export type ChatEvent =
   | { type: "planning" }
   | { type: "plan"; intent: string; steps: string[] }
   | { type: "step_start"; agent: string; doc: string | null }
   | { type: "step_done"; agent: string; status: string }
+  | { type: "delta"; text: string }
+  | { type: "delta_reset" }
   | { type: "message"; message: ChatMessage }
   | { type: "title"; title: string }
   | { type: "done" };
@@ -84,4 +103,23 @@ export const api = {
     fetch(`/api/documents/${encodeURIComponent(filename)}`, {
       method: "DELETE",
     }).then((r) => json<{ deleted: string }>(r)),
+
+  /** URL d'ouverture d'un cours dans le navigateur (PDF inline). */
+  courseFileUrl: (filename: string) =>
+    `/api/documents/${encodeURIComponent(filename)}/file`,
+
+  deliverables: () =>
+    fetch("/api/deliverables").then((r) => json<LibraryItem[]>(r)),
+
+  /** Upload d'une pièce jointe du chat (avant l'envoi du message). */
+  uploadAttachment: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return fetch("/api/attachments", { method: "POST", body }).then((r) =>
+      json<AttachmentMeta>(r),
+    );
+  },
+
+  attachmentFileUrl: (filename: string) =>
+    `/api/attachments/${encodeURIComponent(filename)}/file`,
 };

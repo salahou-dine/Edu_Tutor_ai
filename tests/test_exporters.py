@@ -6,7 +6,7 @@ fichiers. Vérifie les octets produits (signatures) et le contenu du .docx.
 import io
 import zipfile
 
-from interface.exporters import (
+from services.exporters import (
     PDF_AVAILABLE,
     safe_filename,
     to_docx_bytes,

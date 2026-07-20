@@ -64,6 +64,33 @@ def test_sans_skill_pas_de_flag(hermes_present, monkeypatch):
     assert "--skills" not in calls[0]
 
 
+def test_modele_rapide_ajoute_le_flag_m(hermes_present, monkeypatch):
+    # model=<id> (planner/titrage) -> `-m <id>` AVANT --skills.
+    calls = []
+    monkeypatch.setattr(
+        hermes_adapter.subprocess, "run",
+        lambda cmd, **kw: (calls.append(cmd), FakeCompleted(stdout="OK"))[1],
+    )
+    hermes_adapter.ask_hermes_with_skill(
+        "plan ?", skill_name="education-orchestrator",
+        model="anthropic/claude-haiku-4-5",
+    )
+    cmd = calls[0]
+    index = cmd.index("-m")
+    assert cmd[index + 1] == "anthropic/claude-haiku-4-5"
+    assert "--skills" in cmd
+
+
+def test_sans_modele_pas_de_flag_m(hermes_present, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        hermes_adapter.subprocess, "run",
+        lambda cmd, **kw: (calls.append(cmd), FakeCompleted(stdout="OK"))[1],
+    )
+    hermes_adapter.ask_hermes_with_skill("q")
+    assert "-m" not in calls[0]
+
+
 def test_retry_sur_sortie_vide_puis_succes(hermes_present, monkeypatch):
     outputs = iter([FakeCompleted(stdout=""), FakeCompleted(stdout="réponse")])
     monkeypatch.setattr(hermes_adapter.subprocess, "run", lambda *a, **k: next(outputs))
@@ -93,3 +120,93 @@ def test_timeout_traite_comme_echec(hermes_present, monkeypatch):
     result = hermes_adapter.ask_hermes_with_skill("q", max_attempts=1, backoff=0)
     assert result["status"] == "error"
     assert "Délai" in result["error"]
+
+
+# --- Streaming (protocole NUL du patch oneshot) --------------------------------
+
+def _fake_hermes(tmp_path, body: str):
+    """Crée un faux binaire `hermes` (script python) qui joue un scénario stdout."""
+    script = tmp_path / "fake_hermes"
+    script.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys, time\n"
+        + body,
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return str(script)
+
+
+@pytest.fixture
+def fake_streaming_hermes(monkeypatch, tmp_path):
+    """Binaire simulé : 2 tokens, une frontière de tour (NUL), puis le canonique."""
+    from config import settings
+    monkeypatch.setattr(settings, "LAST_PROMPT_PATH", tmp_path / "last.md")
+    monkeypatch.setattr(settings, "HERMES_ERROR_LOG", tmp_path / "err.log")
+    path = _fake_hermes(tmp_path, (
+        "sys.stdout.write('Bonjour, je réflé'); sys.stdout.flush()\n"
+        "time.sleep(0.05)\n"
+        "sys.stdout.write('chis…'); sys.stdout.flush()\n"
+        "sys.stdout.write('\\x00'); sys.stdout.flush()\n"          # tour intermédiaire jeté
+        "sys.stdout.write('Réponse finale.'); sys.stdout.flush()\n"
+    ))
+    monkeypatch.setattr(hermes_adapter.shutil, "which", lambda _: path)
+
+
+def test_streaming_tokens_et_canonique(fake_streaming_hermes):
+    deltas = []
+    result = hermes_adapter.ask_hermes_with_skill(
+        "q", skill_name=None, on_delta=deltas.append, max_attempts=1, backoff=0
+    )
+    assert result["status"] == "success"
+    # La réponse canonique = DERNIER segment NUL (le tour intermédiaire est jeté).
+    assert result["content"] == "Réponse finale."
+    # Les tokens sont bien arrivés au fil de l'eau, avec les remises à zéro :
+    # reset initial, tokens, reset (frontière NUL), canonique.
+    assert deltas[0] is None
+    text_deltas = [d for d in deltas if d]
+    assert "".join(text_deltas).startswith("Bonjour, je réflé")
+    assert deltas.count(None) == 2
+    assert text_deltas[-1] == "Réponse finale."
+
+
+def test_streaming_utf8_coupe_en_plein_multioctet(monkeypatch, tmp_path):
+    """Un caractère accentué coupé entre deux lectures ne doit pas être corrompu."""
+    from config import settings
+    monkeypatch.setattr(settings, "LAST_PROMPT_PATH", tmp_path / "last.md")
+    monkeypatch.setattr(settings, "HERMES_ERROR_LOG", tmp_path / "err.log")
+    path = _fake_hermes(tmp_path, (
+        "data = 'préparation sécurité'.encode('utf-8')\n"
+        "sys.stdout.buffer.write(data[:3]); sys.stdout.buffer.flush()\n"  # coupe dans 'é'
+        "time.sleep(0.05)\n"
+        "sys.stdout.buffer.write(data[3:]); sys.stdout.buffer.flush()\n"
+    ))
+    monkeypatch.setattr(hermes_adapter.shutil, "which", lambda _: path)
+    result = hermes_adapter.ask_hermes_with_skill(
+        "q", skill_name=None, on_delta=lambda _t: None, max_attempts=1, backoff=0
+    )
+    assert result["content"] == "préparation sécurité"
+
+
+def test_streaming_sortie_vide_declenche_retry(monkeypatch, tmp_path):
+    """Sortie vide en streaming -> retry (même sémantique que le mode bloc)."""
+    from config import settings
+    monkeypatch.setattr(settings, "LAST_PROMPT_PATH", tmp_path / "last.md")
+    monkeypatch.setattr(settings, "HERMES_ERROR_LOG", tmp_path / "err.log")
+    marker = tmp_path / "second_try"
+    path = _fake_hermes(tmp_path, (
+        f"import os\n"
+        f"if os.path.exists({str(marker)!r}):\n"
+        f"    sys.stdout.write('OK au 2e essai')\n"
+        f"else:\n"
+        f"    open({str(marker)!r}, 'w').close()\n"  # 1er essai : sortie vide
+    ))
+    monkeypatch.setattr(hermes_adapter.shutil, "which", lambda _: path)
+    deltas = []
+    result = hermes_adapter.ask_hermes_with_skill(
+        "q", skill_name=None, on_delta=deltas.append, max_attempts=2, backoff=0
+    )
+    assert result["status"] == "success"
+    assert result["content"] == "OK au 2e essai"
+    # le retry a bien remis le texte partiel à zéro avant de rejouer
+    assert deltas.count(None) >= 2

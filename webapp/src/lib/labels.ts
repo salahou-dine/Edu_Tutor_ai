@@ -28,7 +28,7 @@ export const MODE_LABELS: Record<string, string> = {
 /** Agents affichés dans « Répondu par … ». */
 export const AGENT_INFO: Record<string, { label: string; icon: LucideIcon }> = {
   tutor: { label: "Tuteur", icon: GraduationCap },
-  idp: { label: "Analyse (IDP)", icon: ScanSearch },
+  idp: { label: "Analyse du document", icon: ScanSearch }, // pas de jargon « IDP »
   content: { label: "Contenu", icon: FileText },
   compose: { label: "Rédaction", icon: PenLine },
   clarify: { label: "Clarification", icon: HelpCircle },
@@ -56,4 +56,5 @@ export const DELIVERABLE_KIND: Record<string, string> = {
   summary: "Résumé",
   revision: "Fiche de révision",
   document: "Document",
+  attachment: "Pièce jointe",
 };

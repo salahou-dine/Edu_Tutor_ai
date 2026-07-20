@@ -1,24 +1,32 @@
 # Dépendances Python du projet hermes-education (EduTutor).
 # Versions minimales = celles validées ; les patchs sont autorisés (>=).
-# Borne haute volontaire : l'UI s'appuie sur des sélecteurs CSS internes
-# (data-testid) de Streamlit ; un bump MAJEUR pourrait casser le rendu en silence.
-# Revalider l'interface avant de relever cette borne.
-streamlit>=1.58.0,<2.0
+
+# --- API (backend du front web React, voir webapp/) --------------------------
+fastapi>=0.115                 # façade HTTP du cœur multi-agents (api/)
+uvicorn>=0.30                  # serveur ASGI : uvicorn api.main:app --port 8000
+
+# --- Cœur (RAG + agents) -----------------------------------------------------
 chromadb>=1.5.9
 sentence-transformers>=5.5.1   # embedding multilingue (tire torch + transformers)
 PyMuPDF>=1.27.2.3              # extraction texte PDF + rendu des pages pour l'OCR
-python-docx>=1.2.0            # lecture Word (.docx) + export des livrables en .docx
-python-pptx>=1.0.2            # lecture PowerPoint (.pptx)
-pytesseract>=0.3.13          # OCR (wrapper) : PDF scannés + images
-pillow>=12.2.0               # images (OCR)
-xhtml2pdf>=0.2.17            # export des livrables en PDF (Markdown -> HTML -> PDF)
-markdown>=3.10               # Markdown -> HTML (pour l'export PDF)
+python-docx>=1.2.0             # lecture Word (.docx) + export des livrables en .docx
+python-pptx>=1.0.2             # lecture PowerPoint (.pptx)
+pytesseract>=0.3.13            # OCR (wrapper) : PDF scannés + images
+pillow>=12.2.0                 # images (OCR)
+xhtml2pdf>=0.2.17              # export des livrables en PDF (Markdown -> HTML -> PDF)
+markdown>=3.10                 # Markdown -> HTML (pour l'export PDF)
 
-# Développement / tests (non requis pour lancer l'app) :
-pytest>=8.0                  # suite tests/ (unités déterministes, sans appel LLM)
+# --- Développement / tests (non requis pour lancer l'app) --------------------
+pytest>=8.0                    # suite tests/ (unités déterministes, sans appel LLM)
+
+# --- Interface ARCHIVÉE (archive/streamlit_app.py, dépannage uniquement) -----
+# Le front officiel est webapp/ (React + Vite, voir webapp/package.json — npm).
+streamlit>=1.58.0,<2.0         # borne <2 : l'UI archivée dépend de data-testid internes
 
 # Dépendances EXTERNES (hors pip) :
 # - Hermes Agent : binaire CLI `hermes` installé/configuré (modèle/provider,
-#   skills education-* dans ~/.hermes/skills).
+#   skills education-* dans ~/.hermes/skills) + patch streaming one-shot
+#   (docs/hermes-oneshot-streaming.patch).
 # - Tesseract OCR (moteur système) pour pytesseract :
 #     sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
+# - Node.js >= 20 + npm pour le front web (cd webapp && npm install).

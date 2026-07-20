@@ -21,10 +21,11 @@ interface Props {
 const ACCEPTED = ".md,.txt,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.webp";
 
 /**
- * Bibliothèque des cours (façon ChatGPT /library) : recherche, ajout, cartes
- * horizontales, suppression. C'est LE lieu de gestion des cours du nouveau front.
+ * Mes cours : gestion des SOURCES (upload, suppression, recherche) en cartes
+ * horizontales. Cliquer une carte OUVRE le cours dans un nouvel onglet.
+ * (Les contenus générés vivent, eux, dans la Bibliothèque.)
  */
-export function Library({ documents, onChanged }: Props) {
+export function Courses({ documents, onChanged }: Props) {
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -68,7 +69,7 @@ export function Library({ documents, onChanged }: Props) {
     <div className="max-w-4xl w-full mx-auto flex flex-col gap-6">
       {/* En-tête : titre + recherche + ajout */}
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-bold tracking-tight flex-1">Bibliothèque</h1>
+        <h1 className="text-2xl font-bold tracking-tight flex-1">Mes cours</h1>
 
         <div className="glass flex items-center gap-2 px-3 py-2">
           <Search size={14} className="text-muted" />
@@ -108,7 +109,7 @@ export function Library({ documents, onChanged }: Props) {
         </p>
       )}
 
-      {/* Cartes horizontales */}
+      {/* Cartes horizontales (clic = ouvrir le cours) */}
       {filtered.length === 0 ? (
         <div className="glass px-6 py-12 text-center">
           <p className="text-muted text-sm">
@@ -122,9 +123,18 @@ export function Library({ documents, onChanged }: Props) {
           {filtered.map((doc) => (
             <div
               key={doc.filename}
-              title={doc.filename}
+              title={`${doc.filename} — cliquer pour ouvrir`}
+              role="button"
+              tabIndex={0}
+              onClick={() =>
+                window.open(api.courseFileUrl(doc.filename), "_blank")
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter")
+                  window.open(api.courseFileUrl(doc.filename), "_blank");
+              }}
               className="glass p-4 flex flex-col gap-3 group hover:bg-surface-hover
-                         transition-colors"
+                         hover:border-accent/40 transition-colors cursor-pointer"
             >
               <div className="flex items-start justify-between">
                 <span className="p-2 rounded-lg bg-accent/15">
@@ -132,7 +142,10 @@ export function Library({ documents, onChanged }: Props) {
                 </span>
                 {confirmDelete === doc.filename ? (
                   <button
-                    onClick={() => remove(doc.filename)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      remove(doc.filename);
+                    }}
                     disabled={deleting !== null}
                     className="px-2 py-1 rounded-lg text-[0.68rem] font-semibold
                                bg-red-500/20 text-red-300 border border-red-500/30
@@ -142,7 +155,10 @@ export function Library({ documents, onChanged }: Props) {
                   </button>
                 ) : (
                   <button
-                    onClick={() => setConfirmDelete(doc.filename)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setConfirmDelete(doc.filename);
+                    }}
                     title="Supprimer ce cours"
                     className="p-1.5 rounded-lg text-muted opacity-0 group-hover:opacity-100
                                hover:text-red-300 hover:bg-surface transition-all"

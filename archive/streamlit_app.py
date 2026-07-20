@@ -1,10 +1,21 @@
 """
-EduTutor — interface étudiant du tuteur académique multi-agents.
+⚠️ ARCHIVÉ (2026-07-19) — ancienne interface Streamlit d'EduTutor.
+
+Remplacée par le front web React (webapp/) + API FastAPI (api/), qui offrent en
+plus : streaming des réponses, timeline de progression, pièces jointes,
+Bibliothèque des médias. Conservée comme référence, reste lançable en dépannage :
+
+    .venv/bin/streamlit run archive/streamlit_app.py
+
+Limites vs le front React : pas de streaming, pas de pièces jointes, pas de
+Bibliothèque ; conversations dans data/conversations.json (distinct du front
+web). Ne pas développer de nouvelles fonctionnalités ici.
+------------------------------------------------------------------------------
 
 L'interface n'appelle QUE la couche orchestration propre :
     from agents import orchestrator          # chat -> orchestrator.handle(...)
     from agents.titler import generate_title # titre de discussion (1er échange)
-    from interface.exporters import ...      # exports des livrables (docx/md/pdf)
+    from services.exporters import ...       # exports des livrables (docx/md/pdf)
 
 Elle n'affiche jamais d'éléments développeur (chunks, distances, top_k, prompt
 Hermes, section_id, vectorstore, logs). L'étudiant voit : sa question, la
@@ -42,7 +53,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from agents import orchestrator
 from agents.titler import generate_title
-from interface.exporters import (
+from services.exporters import (
     PDF_AVAILABLE,
     safe_filename,
     to_docx_bytes,

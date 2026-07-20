@@ -22,6 +22,12 @@ VECTORSTORE_PATH = DATA_DIR / "vectorstore"
 # Cachés sur disque, indexés par doc_id (hash de contenu). Voir agents/document_store.py.
 ARTIFACTS_DIR = DATA_DIR / "artifacts"
 GENERATED_DIR = DATA_DIR / "generated"
+
+# Pièces jointes du chat (front web) : fichiers ponctuels joints à un message,
+# distincts des cours (pas indexés dans le RAG). Ils alimentent la Bibliothèque.
+ATTACHMENTS_DIR = DATA_DIR / "attachments"
+# Budget de texte extrait d'une pièce jointe injecté au tuteur (caractères).
+ATTACHMENT_CONTEXT_MAX_CHARS = int(os.getenv("ATTACHMENT_CONTEXT_MAX_CHARS", "15000"))
 # Version du schéma DocumentArtifact : un bump invalide les artefacts en cache.
 # v2 : le texte des sections est désormais stocké dans l'artefact (contrat complet).
 ARTIFACT_SCHEMA_VERSION = 2
@@ -111,6 +117,13 @@ MIXED_MAX_DISTANCE = 0.65            # < seuil  -> mixed, sinon general_tutor
 # d'outils, lenteur ponctuelle du provider).
 
 DEFAULT_SKILL_NAME = os.getenv("HERMES_SKILL_NAME", "education-tutor")
+
+# Modèle RAPIDE pour les appels utilitaires courts (planner de l'orchestrateur,
+# titrage des discussions) : ces appels ne produisent qu'un petit JSON ou
+# quelques mots — un grand modèle y est surdimensionné (latence ×3-4 pour rien).
+# Les agents qui RÉDIGENT (tuteur, IDP, contenu, compose) restent sur le modèle
+# par défaut configuré côté Hermes. Vide ("") -> désactive l'override.
+HERMES_FAST_MODEL = os.getenv("HERMES_FAST_MODEL", "anthropic/claude-haiku-4-5")
 
 # Résumé global d'un cours : on envoie le TEXTE INTÉGRAL du cours en UN seul
 # appel (comme ChatGPT : tout le document tient dans le contexte). Garde-fou :

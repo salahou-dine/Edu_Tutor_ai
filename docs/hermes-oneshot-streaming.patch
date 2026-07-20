@@ -1,0 +1,63 @@
+--- hermes_cli/oneshot.py.bak.20260716	2026-07-16 13:13:51.394170226 +0100
++++ hermes_cli/oneshot.py	2026-07-16 13:14:47.129085055 +0100
+@@ -176,6 +176,15 @@
+     real_stdout = sys.stdout
+     devnull = open(os.devnull, "w", encoding="utf-8")
+ 
++    # [EduTutor patch] Opt-in token streaming for programmatic consumers.
++    # HERMES_ONESHOT_STREAM=1 -> text deltas are written to the real stdout as
++    # they arrive; a NUL byte (\x00) marks each turn boundary, and the
++    # CANONICAL final response is always written as the last NUL-separated
++    # segment.  Consumers keep the last segment (intermediate turns and any
++    # streaming/final divergence are thereby harmless).  Without the env var,
++    # behaviour is byte-for-byte identical to upstream.
++    stream_out = real_stdout if os.getenv("HERMES_ONESHOT_STREAM") == "1" else None
++
+     try:
+         with redirect_stdout(devnull), redirect_stderr(devnull):
+             response = _run_agent(
+@@ -184,6 +193,7 @@
+                 provider=provider,
+                 toolsets=explicit_toolsets,
+                 use_config_toolsets=use_config_toolsets,
++                stream_to=stream_out,
+             )
+     finally:
+         try:
+@@ -192,6 +202,8 @@
+             pass
+ 
+     if response:
++        if stream_out is not None:
++            real_stdout.write("\x00")  # [EduTutor patch] canonical final segment
+         real_stdout.write(response)
+         if not response.endswith("\n"):
+             real_stdout.write("\n")
+@@ -221,6 +233,7 @@
+     provider: Optional[str] = None,
+     toolsets: object = None,
+     use_config_toolsets: bool = True,
++    stream_to=None,  # [EduTutor patch] real stdout when HERMES_ONESHOT_STREAM=1
+ ) -> str:
+     """Build an AIAgent exactly like a normal CLI chat turn would, then
+     run a single conversation.  Returns the final response string."""
+@@ -337,6 +350,19 @@
+     agent.stream_delta_callback = None
+     agent.tool_gen_callback = None
+ 
++    # [EduTutor patch] Opt-in streaming: write deltas to the REAL stdout
++    # (bypasses the devnull redirect).  ``None`` deltas are turn boundaries
++    # (tools about to run) -> NUL marker so consumers discard the partial turn.
++    if stream_to is not None:
++        def _stream_delta(text) -> None:
++            try:
++                stream_to.write("\x00" if text is None else str(text))
++                stream_to.flush()
++            except Exception:
++                pass  # never let display errors kill the agent loop
++
++        agent.stream_delta_callback = _stream_delta
++
+     return agent.chat(prompt) or ""
+ 
+ 

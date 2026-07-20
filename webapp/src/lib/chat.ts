@@ -10,11 +10,12 @@ export async function streamMessage(
   conversationId: number,
   content: string,
   onEvent: (event: ChatEvent) => void,
+  attachments: string[] = [],
 ): Promise<void> {
   const response = await fetch(`/api/conversations/${conversationId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, attachments }),
   });
   if (!response.ok || !response.body) {
     throw new Error(`API ${response.status} : ${await response.text()}`);

@@ -14,6 +14,7 @@ from agents.orchestrator import (
     _compose,
     _corpus_common_tokens,
     _deliverable_lead,
+    _handle_revise,
     _is_revision_request,
     _match_doc,
     _repair_preconditions,
@@ -264,3 +265,195 @@ class TestDeliverable:
         assert final["status"] == "success"
         assert "## Structure" in final["answer"]
         assert final["deliverable"]["type"] == "summary"
+
+
+# --- Lignée des livrables (versionnage Bibliothèque) ---------------------------
+
+class TestDeliverableLineage:
+    def test_generation_demarre_une_lignee(self):
+        d = _build_deliverable({
+            "kind": "content", "status": "success", "content_type": "summary",
+            "doc": "cours.pdf", "markdown": "# Résumé",
+        })
+        assert len(d["id"]) == 12
+        assert d["version"] == 1
+
+    def test_deux_generations_ont_des_lignees_distinctes(self):
+        base = {"kind": "content", "status": "success", "content_type": "summary",
+                "doc": "c.pdf", "markdown": "x"}
+        assert _build_deliverable(base)["id"] != _build_deliverable(base)["id"]
+
+    def test_revision_prolonge_la_lignee(self, monkeypatch):
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "revise_document",
+                            lambda *a, **k: {"status": "success",
+                                             "content": "# Version courte",
+                                             "title": "Rapport"})
+        parent = {"type": "document", "title": "Rapport", "doc": "",
+                  "markdown": "# Long", "id": "abc123abc123", "version": 1}
+        result = _handle_revise("raccourcis-le", parent)
+        d = result["deliverable"]
+        assert d["id"] == "abc123abc123"   # même lignée
+        assert d["version"] == 2           # version incrémentée
+        assert d["type"] == "document"     # type conservé
+
+    def test_revision_dun_livrable_sans_id_cree_une_lignee(self, monkeypatch):
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "revise_document",
+                            lambda *a, **k: {"status": "success",
+                                             "content": "# X", "title": "T"})
+        # ancien livrable (avant le versionnage) : pas d'id
+        parent = {"type": "summary", "title": "Résumé — c", "doc": "c.pdf",
+                  "markdown": "# Y"}
+        d = _handle_revise("raccourcis-le", parent)["deliverable"]
+        assert len(d["id"]) == 12 and d["version"] == 2
+
+
+# --- Progression (hook on_event pour l'UI temps réel) --------------------------
+
+class TestProgressEvents:
+    def test_sequence_plan_puis_etapes(self, monkeypatch, corpus):
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        monkeypatch.setattr(orch, "_run_tutor",
+                            lambda *a, **k: {"status": "success", "kind": "tutor",
+                                             "answer": "ok", "doc": None})
+        events = []
+        result = orch.handle("qu'est-ce que la kill chain ?", on_event=events.append)
+        assert result["status"] == "success"
+        assert [e["type"] for e in events] == ["plan", "step_start", "step_done"]
+        assert events[0] == {"type": "plan", "intent": "question", "steps": ["tutor"]}
+        assert events[2]["status"] == "success"
+
+    def test_observateur_defaillant_nest_jamais_bloquant(self, monkeypatch, corpus):
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        monkeypatch.setattr(orch, "_run_tutor",
+                            lambda *a, **k: {"status": "success", "kind": "tutor",
+                                             "answer": "ok", "doc": None})
+
+        def broken(_event):
+            raise RuntimeError("observateur cassé")
+
+        result = orch.handle("question simple ?", on_event=broken)
+        assert result["status"] == "success"  # l'échec du hook n'affecte pas la réponse
+
+    def test_sans_observateur(self, monkeypatch, corpus):
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        monkeypatch.setattr(orch, "_run_tutor",
+                            lambda *a, **k: {"status": "success", "kind": "tutor",
+                                             "answer": "ok", "doc": None})
+        assert orch.handle("question ?")["status"] == "success"
+
+
+# --- Pièces jointes : routage direct vers le tuteur ancré -----------------------
+
+class TestAttachments:
+    def _capture_tutor(self, monkeypatch, orch):
+        captured = {}
+
+        def fake_tutor(question, history, doc=None, sections=None, on_delta=None):
+            captured["question"] = question
+            return {"status": "success", "kind": "tutor", "answer": "ok", "doc": None}
+
+        monkeypatch.setattr(orch, "_run_tutor", fake_tutor)
+        return captured
+
+    def test_piece_jointe_va_au_tuteur_avec_le_contenu(self, monkeypatch, corpus):
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        captured = self._capture_tutor(monkeypatch, orch)
+        planner_called = []
+        monkeypatch.setattr(orch, "_plan_with_llm",
+                            lambda *a, **k: planner_called.append(1))
+
+        result = orch.handle(
+            "résume ce document",  # matcherait summary/clarify SANS la pièce jointe
+            use_planner=True,
+            attachments=[{"filename": "notes_td.pdf", "text": "Contenu du TD sur Modbus."}],
+        )
+        assert result["status"] == "success"
+        assert result["trace"]["intent"] == "attachment"
+        assert result["steps_run"] == ["tutor"]
+        assert planner_called == []  # routage DIRECT : pas d'appel planner
+        # le tuteur reçoit le contenu délimité + le nom du fichier + la question
+        assert "notes_td.pdf" in captured["question"]
+        assert "DÉBUT DES PIÈCES JOINTES" in captured["question"]
+        assert "Contenu du TD sur Modbus." in captured["question"]
+        assert "résume ce document" in captured["question"]
+
+    def test_piece_jointe_sans_texte_extrait(self, monkeypatch, corpus):
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        captured = self._capture_tutor(monkeypatch, orch)
+        result = orch.handle(
+            "que vois-tu ?",
+            attachments=[{"filename": "photo.png", "text": ""}],
+        )
+        assert result["status"] == "success"
+        assert "aucun texte n'a pu en être extrait" in captured["question"]
+
+    def test_budget_de_contexte_respecte(self, monkeypatch, corpus):
+        import agents.orchestrator as orch
+        from config import settings
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        captured = self._capture_tutor(monkeypatch, orch)
+        huge = "x" * (settings.ATTACHMENT_CONTEXT_MAX_CHARS * 3)
+        orch.handle("résume", attachments=[{"filename": "gros.pdf", "text": huge}])
+        assert len(captured["question"]) < settings.ATTACHMENT_CONTEXT_MAX_CHARS + 2000
+
+
+# --- Filet déterministe quand le planner LLM échoue ----------------------------
+
+class TestPlannerFallback:
+    def _patch_agents(self, monkeypatch, orch, corpus):
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        monkeypatch.setattr(orch, "_run_content",
+                            lambda step: {"status": "success", "kind": "content",
+                                          "answer": "# Fiche", "markdown": "# Fiche",
+                                          "content_type": step.get("content_type"),
+                                          "doc": step["doc"]["filename"]})
+        monkeypatch.setattr(orch, "_run_idp",
+                            lambda doc: {"status": "success", "kind": "idp",
+                                         "answer": "## Structure", "doc": doc["filename"]})
+
+    def test_planner_ko_bascule_sur_la_table_dintention(self, monkeypatch, corpus):
+        """Hermes KO (retour None) -> _classify_to_plan route quand même."""
+        import agents.orchestrator as orch
+        self._patch_agents(monkeypatch, orch, corpus)
+        monkeypatch.setattr(orch, "_plan_with_llm", lambda *a, **k: None)
+
+        result = orch.handle("fais-moi une fiche de révision du CM3", use_planner=True)
+        assert result["status"] == "success"
+        assert result["trace"]["intent"] == "revision"      # routé par le FILET
+        assert result["steps_run"] == ["idp", "content"]    # préconditions réparées
+
+    def test_json_planner_inexploitable_bascule_aussi(self, monkeypatch, corpus):
+        """Hermes répond du texte sans JSON -> extract_json None -> filet."""
+        import agents.orchestrator as orch
+        self._patch_agents(monkeypatch, orch, corpus)
+        monkeypatch.setattr(
+            orch, "ask_hermes_with_skill",
+            lambda *a, **k: {"status": "success", "method": "cli", "error": None,
+                             "content": "Désolé, je ne peux pas produire de plan."},
+        )
+        result = orch.handle("fais-moi une fiche de révision du CM3", use_planner=True)
+        assert result["status"] == "success"
+        assert result["trace"]["intent"] == "revision"
+
+    def test_plan_avec_agent_inconnu_replie_sur_tutor(self, monkeypatch, corpus):
+        """Plan JSON valide mais agents inconnus -> filtrés -> repli tuteur."""
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        monkeypatch.setattr(orch, "_run_tutor",
+                            lambda *a, **k: {"status": "success", "kind": "tutor",
+                                             "answer": "ok", "doc": None})
+        monkeypatch.setattr(
+            orch, "ask_hermes_with_skill",
+            lambda *a, **k: {"status": "success", "method": "cli", "error": None,
+                             "content": '{"steps": [{"agent": "translator"}]}'},
+        )
+        result = orch.handle("question quelconque", use_planner=True)
+        assert result["status"] == "success"
+        assert result["steps_run"] == ["tutor"]

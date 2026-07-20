@@ -2,19 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Fond « Zyricon » : dégradé violet profond, léger halo lumineux. */
+/* Fond « futuriste premium » : noir aubergine profond, dégradé subtil du noir
+   violacé vers un prune fumé puis un mauve désaturé, avec une lueur violette
+   diffuse dans le coin supérieur droit. Contraste faible, ambiance
+   cinématographique. */
 body {
   @apply text-ink antialiased;
   background:
-    radial-gradient(1100px 500px at 70% -10%, rgba(139, 92, 246, 0.16), transparent 60%),
-    radial-gradient(800px 420px at 10% 110%, rgba(139, 92, 246, 0.10), transparent 60%),
-    linear-gradient(160deg, #171120 0%, #1a1326 55%, #150f1e 100%);
+    radial-gradient(950px 560px at 90% -10%, rgba(157, 107, 255, 0.17), transparent 62%),
+    radial-gradient(700px 480px at -8% 110%, rgba(88, 62, 128, 0.12), transparent 60%),
+    linear-gradient(160deg, #141019 0%, #171119 40%, #1c1322 72%, #251a2c 100%);
+  background-attachment: fixed;
   min-height: 100vh;
 }
 
-/* Panneau « verre dépoli ». */
+/* Panneau « verre dépoli » : surface presque noire, bordure lavande fine. */
 .glass {
-  @apply bg-surface border border-surface-border rounded-xl2 backdrop-blur-sm;
+  @apply bg-surface border border-surface-border rounded-xl2;
+  backdrop-filter: blur(14px);
 }
 
 /* Barre de défilement discrète. */
@@ -36,6 +41,6 @@ body {
 .md-body pre code { @apply bg-transparent p-0; }
 .md-body blockquote { @apply border-l-2 border-accent/50 pl-3 my-2 text-muted; }
 .md-body hr { @apply border-surface-border my-4; }
-.md-body a { @apply text-accent-soft underline; }
+.md-body a { @apply text-electric-soft underline; }
 .md-body table { @apply my-2 text-xs; }
 .md-body th, .md-body td { @apply border border-surface-border px-2 py-1; }
