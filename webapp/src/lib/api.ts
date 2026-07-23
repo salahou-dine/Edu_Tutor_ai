@@ -3,6 +3,14 @@
  * Types alignés sur les schémas du backend (api/main.py, api/store.py).
  */
 
+import { authFetch, setToken } from "./session";
+
+export interface User {
+  id: string;
+  email: string;
+  created_at: number | null;
+}
+
 export interface CourseDoc {
   filename: string;
   analyzed: boolean;
@@ -76,17 +84,39 @@ async function json<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function credentials(
+  path: "login" | "register",
+  email: string,
+  password: string,
+): Promise<User> {
+  const response = await fetch(`/api/auth/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await json<{ token: string; user: User }>(response);
+  setToken(data.token);
+  return data.user;
+}
+
 export const api = {
-  documents: () => fetch("/api/documents").then((r) => json<CourseDoc[]>(r)),
+  // --- Authentification ---
+  login: (email: string, password: string) => credentials("login", email, password),
+  register: (email: string, password: string) =>
+    credentials("register", email, password),
+  me: () => authFetch("/api/auth/me").then((r) => json<User>(r)),
+
+  // --- Données (toutes authentifiées) ---
+  documents: () => authFetch("/api/documents").then((r) => json<CourseDoc[]>(r)),
 
   conversations: () =>
-    fetch("/api/conversations").then((r) => json<ConversationSummary[]>(r)),
+    authFetch("/api/conversations").then((r) => json<ConversationSummary[]>(r)),
 
   conversation: (id: number) =>
-    fetch(`/api/conversations/${id}`).then((r) => json<Conversation>(r)),
+    authFetch(`/api/conversations/${id}`).then((r) => json<Conversation>(r)),
 
   createConversation: () =>
-    fetch("/api/conversations", { method: "POST" }).then((r) =>
+    authFetch("/api/conversations", { method: "POST" }).then((r) =>
       json<Conversation>(r),
     ),
 
@@ -94,28 +124,28 @@ export const api = {
   uploadDocument: (file: File) => {
     const body = new FormData();
     body.append("file", file);
-    return fetch("/api/documents", { method: "POST", body }).then((r) =>
+    return authFetch("/api/documents", { method: "POST", body }).then((r) =>
       json<{ saved: string }>(r),
     );
   },
 
   deleteDocument: (filename: string) =>
-    fetch(`/api/documents/${encodeURIComponent(filename)}`, {
+    authFetch(`/api/documents/${encodeURIComponent(filename)}`, {
       method: "DELETE",
     }).then((r) => json<{ deleted: string }>(r)),
 
-  /** URL d'ouverture d'un cours dans le navigateur (PDF inline). */
+  /** URL d'ouverture d'un cours (à ouvrir via session.openAuthed). */
   courseFileUrl: (filename: string) =>
     `/api/documents/${encodeURIComponent(filename)}/file`,
 
   deliverables: () =>
-    fetch("/api/deliverables").then((r) => json<LibraryItem[]>(r)),
+    authFetch("/api/deliverables").then((r) => json<LibraryItem[]>(r)),
 
   /** Upload d'une pièce jointe du chat (avant l'envoi du message). */
   uploadAttachment: (file: File) => {
     const body = new FormData();
     body.append("file", file);
-    return fetch("/api/attachments", { method: "POST", body }).then((r) =>
+    return authFetch("/api/attachments", { method: "POST", body }).then((r) =>
       json<AttachmentMeta>(r),
     );
   },

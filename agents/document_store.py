@@ -12,7 +12,7 @@ contenus générés.
 import hashlib
 import json
 
-from config import settings
+from config import settings, workspace
 from agents.artifact import DocumentArtifact
 
 
@@ -28,7 +28,7 @@ def compute_doc_id(file_path: str) -> str:
 # --- Artefacts documentaires (IDP) ------------------------------------------
 
 def _artifact_path(doc_id: str):
-    return settings.ARTIFACTS_DIR / f"{doc_id}.json"
+    return workspace.artifacts_dir() / f"{doc_id}.json"
 
 
 def load_artifact(doc_id: str) -> DocumentArtifact | None:
@@ -51,7 +51,7 @@ def load_artifact(doc_id: str) -> DocumentArtifact | None:
 def save_artifact(artifact: DocumentArtifact) -> None:
     """Persiste un artefact (jamais bloquant)."""
     try:
-        settings.ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+        workspace.artifacts_dir().mkdir(parents=True, exist_ok=True)
         _artifact_path(artifact.doc_id).write_text(
             json.dumps(artifact.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -68,7 +68,7 @@ def _options_key(options: dict | None) -> str:
 
 
 def _generated_path(doc_id: str, content_type: str, options: dict | None):
-    return settings.GENERATED_DIR / f"{doc_id}__{content_type}__{_options_key(options)}.json"
+    return workspace.generated_dir() / f"{doc_id}__{content_type}__{_options_key(options)}.json"
 
 
 def load_generated(doc_id: str, content_type: str, options: dict | None = None) -> dict | None:
@@ -87,7 +87,7 @@ def save_generated(
 ) -> None:
     """Persiste un contenu généré (jamais bloquant)."""
     try:
-        settings.GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+        workspace.generated_dir().mkdir(parents=True, exist_ok=True)
         _generated_path(doc_id, content_type, options).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )

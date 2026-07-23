@@ -7,17 +7,22 @@ import {
   type ConversationSummary,
   type CourseDoc,
   type LibraryItem,
+  type User,
 } from "./lib/api";
 import { streamMessage } from "./lib/chat";
+import { clearToken, getToken, setUnauthorizedHandler } from "./lib/session";
 import { ChatView } from "./components/ChatView";
 import { Courses } from "./components/Courses";
 import { Home } from "./components/Home";
+import { Login } from "./components/Login";
 import { MediaLibrary } from "./components/MediaLibrary";
 import { PromptBar } from "./components/PromptBar";
 import { Sidebar } from "./components/Sidebar";
 import type { ProgressStep } from "./components/ProgressTimeline";
 
 export default function App() {
+  // undefined = vérification de session en cours ; null = non connecté.
+  const [user, setUser] = useState<User | null | undefined>(undefined);
   const [documents, setDocuments] = useState<CourseDoc[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [deliverables, setDeliverables] = useState<LibraryItem[]>([]);
@@ -36,7 +41,19 @@ export default function App() {
     api.deliverables().then(setDeliverables).catch(() => undefined);
   }, []);
 
+  // Session : un 401 (token expiré) déconnecte ; au démarrage, on tente /me.
   useEffect(() => {
+    setUnauthorizedHandler(() => setUser(null));
+    if (getToken()) {
+      api.me().then(setUser).catch(() => setUser(null));
+    } else {
+      setUser(null);
+    }
+  }, []);
+
+  // Chargement des données APRÈS connexion.
+  useEffect(() => {
+    if (!user) return;
     Promise.all([
       api.documents(),
       api.conversations(),
@@ -50,7 +67,18 @@ export default function App() {
         setPdfAvailable(Boolean(health.pdf_export));
       })
       .catch(() => setApiDown(true));
-  }, []);
+  }, [user]);
+
+  function logout() {
+    clearToken();
+    setUser(null);
+    setMessages([]);
+    setActiveId(null);
+    setConversations([]);
+    setDocuments([]);
+    setDeliverables([]);
+    setView("chat");
+  }
 
   /** Envoi d'un message (depuis les cartes d'objectif ou la barre de saisie). */
   async function sendMessage(prompt: string, attachments: AttachmentMeta[] = []) {
@@ -167,6 +195,14 @@ export default function App() {
 
   const showHome = messages.length === 0 && !busy;
 
+  // Session en cours de vérification / non connecté.
+  if (user === undefined) {
+    return <div className="h-screen flex items-center justify-center text-muted">…</div>;
+  }
+  if (user === null) {
+    return <Login onAuthenticated={setUser} />;
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
@@ -176,10 +212,12 @@ export default function App() {
         activeId={activeId}
         libraryActive={view === "library"}
         coursesActive={view === "courses"}
+        userEmail={user.email}
         onNewChat={newChat}
         onOpenConversation={openConversation}
         onOpenLibrary={() => setView("library")}
         onOpenCourses={() => setView("courses")}
+        onLogout={logout}
       />
 
       <main className="flex-1 min-w-0 p-4 pl-0">

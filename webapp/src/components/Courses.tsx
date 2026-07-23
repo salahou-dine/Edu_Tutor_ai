@@ -1,3 +1,4 @@
+import { openAuthed } from "../lib/session";
 import { useRef, useState } from "react";
 import {
   CheckCircle2,
@@ -127,11 +128,11 @@ export function Courses({ documents, onChanged }: Props) {
               role="button"
               tabIndex={0}
               onClick={() =>
-                window.open(api.courseFileUrl(doc.filename), "_blank")
+                openAuthed(api.courseFileUrl(doc.filename))
               }
               onKeyDown={(event) => {
                 if (event.key === "Enter")
-                  window.open(api.courseFileUrl(doc.filename), "_blank");
+                  openAuthed(api.courseFileUrl(doc.filename));
               }}
               className="glass p-4 flex flex-col gap-3 group hover:bg-surface-hover
                          hover:border-accent/40 transition-colors cursor-pointer"

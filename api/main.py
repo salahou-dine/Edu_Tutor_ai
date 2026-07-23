@@ -14,6 +14,7 @@ Lancement (dev) :
     .venv/bin/uvicorn api.main:app --port 8000 --reload
 """
 
+import contextvars
 import json
 import queue
 import sys
@@ -25,14 +26,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from agents import orchestrator
 from agents.titler import generate_title
-from config import settings
+from config import settings, workspace
 from services.exporters import (
     PDF_AVAILABLE,
     safe_filename,
@@ -41,17 +42,77 @@ from services.exporters import (
     to_pdf_bytes,
 )
 from rag.indexer import sync_courses_index
-from api import store
+from api import auth, store
 
 app = FastAPI(title="EduTutor API", version="0.1.0")
 
-# Front de dev (Vite). Application locale mono-utilisateur : pas d'auth.
+# Compte propriétaire des données pré-existantes (créé au démarrage).
+auth.ensure_default_user()
+
+# Front de dev (Vite). Application locale : auth par token (identifiant + mdp).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- Authentification & contexte utilisateur ----------------------------------
+
+@app.middleware("http")
+async def _user_context(request, call_next):
+    """Pose l'utilisateur courant (ContextVar) pour toute la requête, à partir du
+    token. Les couches profondes (RAG, caches, store) résolvent alors le bon
+    workspace SANS recevoir user_id en paramètre. L'AUTORISATION (401) reste
+    faite par la dépendance `current_user` sur chaque endpoint protégé."""
+    authz = request.headers.get("authorization", "")
+    token = authz[7:] if authz.lower().startswith("bearer ") else ""
+    user_id = auth.read_token(token) if token else None
+    if user_id:
+        workspace.set_current_user(user_id)
+    return await call_next(request)
+
+
+def current_user(authorization: str = Header(default="")) -> str:
+    """Dépendance d'AUTORISATION : 401 si pas de token valide."""
+    token = authorization[7:] if authorization.lower().startswith("bearer ") else ""
+    user_id = auth.read_token(token) if token else None
+    if user_id is None:
+        raise HTTPException(401, "Authentification requise.")
+    workspace.set_current_user(user_id)  # ceinture+bretelles (endpoints sync)
+    return user_id
+
+
+class CredentialsIn(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/auth/register", status_code=201)
+def register(body: CredentialsIn) -> dict:
+    try:
+        user = auth.create_user(body.email, body.password)
+    except auth.AuthError as exc:
+        raise HTTPException(400, str(exc))
+    return {"token": auth.make_token(user["id"]), "user": user}
+
+
+@app.post("/api/auth/login")
+def login(body: CredentialsIn) -> dict:
+    try:
+        user = auth.authenticate(body.email, body.password)
+    except auth.AuthError as exc:
+        raise HTTPException(401, str(exc))
+    return {"token": auth.make_token(user["id"]), "user": user}
+
+
+@app.get("/api/auth/me")
+def me(user_id: str = Depends(current_user)) -> dict:
+    user = auth.get_user(user_id)
+    if user is None:
+        raise HTTPException(401, "Compte introuvable.")
+    return {"id": user["id"], "email": user["email"], "created_at": user.get("created_at")}
 
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 _EXPORTERS = {
@@ -71,7 +132,7 @@ def health() -> dict:
 # --- Documents (cours) ---------------------------------------------------------
 
 @app.get("/api/documents")
-def list_documents() -> list[dict]:
+def list_documents(user_id: str = Depends(current_user)) -> list[dict]:
     """Cours disponibles + statut d'analyse + taille/date (pour la Bibliothèque)."""
     documents = []
     for d in orchestrator.list_documents():
@@ -85,22 +146,40 @@ def list_documents() -> list[dict]:
     return documents
 
 
+def _enrich_vision_background(course_path: str) -> None:
+    """Décrit les figures/schémas du cours et les indexe, en tâche de fond
+    (un appel LLM par image = lent) : le cours texte est déjà disponible."""
+    try:
+        from rag.indexer import enrich_course_vision
+        enrich_course_vision(course_path)
+    except Exception:
+        pass  # best-effort : le texte du cours reste indexé quoi qu'il arrive
+
+
 @app.post("/api/documents")
-def upload_document(file: UploadFile) -> dict:
+def upload_document(file: UploadFile, user_id: str = Depends(current_user)) -> dict:
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in settings.SUPPORTED_EXTENSIONS:
         raise HTTPException(400, f"Format non supporté : {suffix or '(aucun)'}")
-    settings.COURSES_DIR.mkdir(parents=True, exist_ok=True)
-    target = settings.COURSES_DIR / Path(file.filename).name
+    workspace.courses_dir().mkdir(parents=True, exist_ok=True)
+    target = workspace.courses_dir() / Path(file.filename).name
     target.write_bytes(file.file.read())
-    result = sync_courses_index()  # vectorisation du nouveau cours (peut être long)
+    result = sync_courses_index()  # texte : rapide, disponible immédiatement
+    # Figures/schémas : enrichis en arrière-plan (le texte n'attend pas). Le
+    # thread hérite du contexte utilisateur (workspace du bon compte).
+    if settings.RAG_VISION_ENABLED:
+        ctx = contextvars.copy_context()
+        threading.Thread(
+            target=lambda: ctx.run(_enrich_vision_background, str(target)),
+            daemon=True,
+        ).start()
     return {"saved": target.name, "index": result}
 
 
 @app.get("/api/documents/{filename}/file")
-def get_document_file(filename: str) -> FileResponse:
+def get_document_file(filename: str, user_id: str = Depends(current_user)) -> FileResponse:
     """Sert le fichier du cours pour ouverture dans le navigateur (PDF inline)."""
-    target = settings.COURSES_DIR / Path(filename).name  # .name : pas de traversée
+    target = workspace.courses_dir() / Path(filename).name  # .name : pas de traversée
     if not target.exists():
         raise HTTPException(404, "Cours introuvable.")
     return FileResponse(
@@ -109,7 +188,7 @@ def get_document_file(filename: str) -> FileResponse:
 
 
 @app.get("/api/deliverables")
-def list_deliverables() -> list[dict]:
+def list_deliverables(user_id: str = Depends(current_user)) -> list[dict]:
     """Bibliothèque : tous les livrables générés (fiches, résumés, documents)."""
     return store.list_all_deliverables()
 
@@ -118,32 +197,32 @@ def list_deliverables() -> list[dict]:
 
 def _unique_attachment_path(name: str) -> Path:
     """Chemin de sauvegarde sans collision (suffixe _2, _3… si le nom existe)."""
-    base = settings.ATTACHMENTS_DIR / Path(name).name
+    base = workspace.attachments_dir() / Path(name).name
     if not base.exists():
         return base
     stem, suffix = base.stem, base.suffix
     for index in range(2, 1000):
-        candidate = settings.ATTACHMENTS_DIR / f"{stem}_{index}{suffix}"
+        candidate = workspace.attachments_dir() / f"{stem}_{index}{suffix}"
         if not candidate.exists():
             return candidate
     raise HTTPException(500, "Trop de fichiers homonymes.")
 
 
 @app.post("/api/attachments")
-def upload_attachment(file: UploadFile) -> dict:
+def upload_attachment(file: UploadFile, user_id: str = Depends(current_user)) -> dict:
     """Joint un fichier au chat : sauvegardé hors des cours (pas indexé au RAG)."""
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in settings.SUPPORTED_EXTENSIONS:
         raise HTTPException(400, f"Format non supporté : {suffix or '(aucun)'}")
-    settings.ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    workspace.attachments_dir().mkdir(parents=True, exist_ok=True)
     target = _unique_attachment_path(file.filename)
     target.write_bytes(file.file.read())
     return {"filename": target.name, "size": target.stat().st_size}
 
 
 @app.get("/api/attachments/{filename}/file")
-def get_attachment_file(filename: str) -> FileResponse:
-    target = settings.ATTACHMENTS_DIR / Path(filename).name
+def get_attachment_file(filename: str, user_id: str = Depends(current_user)) -> FileResponse:
+    target = workspace.attachments_dir() / Path(filename).name
     if not target.exists():
         raise HTTPException(404, "Pièce jointe introuvable.")
     return FileResponse(
@@ -152,27 +231,34 @@ def get_attachment_file(filename: str) -> FileResponse:
 
 
 def _attachment_texts(filenames: list[str]) -> list[dict]:
-    """Extrait (au mieux) le texte de chaque pièce jointe pour ancrer le tuteur.
-    Réutilise le pipeline documentaire (PDF/docx/pptx/images OCR)."""
+    """Prépare chaque pièce jointe pour ancrer le tuteur :
+    - IMAGE (schéma, diagramme) -> `image_path` : le modèle la VOIT (vision native
+      Hermes), pas d'OCR (la vision lit aussi le texte de l'image) ;
+    - autres formats -> `text` extrait via le pipeline documentaire (PDF/docx/pptx).
+    """
     from rag.document_loader import load_document_segments
 
     attachments = []
     for name in filenames:
-        target = settings.ATTACHMENTS_DIR / Path(name).name
+        target = workspace.attachments_dir() / Path(name).name
         if not target.exists():
+            continue
+        if target.suffix.lower() in settings.IMAGE_EXTENSIONS:
+            attachments.append({"filename": target.name, "text": "",
+                                "image_path": str(target.resolve())})
             continue
         try:
             segments = load_document_segments(str(target))
             text = "\n\n".join(s["text"] for s in segments)
         except Exception:
-            text = ""  # image sans texte / format illisible : le tuteur le dira
+            text = ""  # format illisible : le tuteur le dira
         attachments.append({"filename": target.name, "text": text})
     return attachments
 
 
 @app.delete("/api/documents/{filename}")
-def delete_document(filename: str) -> dict:
-    target = settings.COURSES_DIR / Path(filename).name  # .name : pas de traversée
+def delete_document(filename: str, user_id: str = Depends(current_user)) -> dict:
+    target = workspace.courses_dir() / Path(filename).name  # .name : pas de traversée
     if not target.exists():
         raise HTTPException(404, "Cours introuvable.")
     target.unlink()
@@ -183,17 +269,17 @@ def delete_document(filename: str) -> dict:
 # --- Conversations --------------------------------------------------------------
 
 @app.get("/api/conversations")
-def list_conversations() -> list[dict]:
+def list_conversations(user_id: str = Depends(current_user)) -> list[dict]:
     return store.list_conversations()
 
 
 @app.post("/api/conversations", status_code=201)
-def create_conversation() -> dict:
+def create_conversation(user_id: str = Depends(current_user)) -> dict:
     return store.create_conversation()
 
 
 @app.get("/api/conversations/{conv_id}")
-def get_conversation(conv_id: int) -> dict:
+def get_conversation(conv_id: int, user_id: str = Depends(current_user)) -> dict:
     conv = store.get_conversation(conv_id)
     if conv is None:
         raise HTTPException(404, "Conversation introuvable.")
@@ -201,7 +287,7 @@ def get_conversation(conv_id: int) -> dict:
 
 
 @app.delete("/api/conversations/{conv_id}")
-def delete_conversation(conv_id: int) -> dict:
+def delete_conversation(conv_id: int, user_id: str = Depends(current_user)) -> dict:
     if not store.delete_conversation(conv_id):
         raise HTTPException(404, "Conversation introuvable.")
     return {"deleted": conv_id}
@@ -236,7 +322,7 @@ def _assistant_message(result: dict | None) -> dict:
 
 
 @app.post("/api/conversations/{conv_id}/messages")
-def post_message(conv_id: int, message: MessageIn) -> StreamingResponse:
+def post_message(conv_id: int, message: MessageIn, user_id: str = Depends(current_user)) -> StreamingResponse:
     """
     Envoie un message étudiant et STREAME la progression en SSE :
       {"type": "planning"} · {"type": "plan", intent, steps}
@@ -261,7 +347,7 @@ def post_message(conv_id: int, message: MessageIn) -> StreamingResponse:
     attachments = _attachment_texts(message.attachments or [])
     user_message: dict = {"role": "user", "content": content}
     if attachments:
-        att_dir = settings.ATTACHMENTS_DIR
+        att_dir = workspace.attachments_dir()
         user_message["attachments"] = [
             {"filename": a["filename"],
              "size": (att_dir / a["filename"]).stat().st_size}
@@ -270,13 +356,15 @@ def post_message(conv_id: int, message: MessageIn) -> StreamingResponse:
     store.append_messages(conv_id, [user_message])
 
     events: queue.Queue = queue.Queue()
+    ctx = contextvars.copy_context()  # capture l'utilisateur courant pour les threads
 
     # Titre de la discussion : en PARALLÈLE de la réponse (latence masquée).
     title_box: dict = {}
     title_thread = None
     if is_first:
         title_thread = threading.Thread(
-            target=lambda: title_box.__setitem__("title", generate_title(content)),
+            target=lambda: ctx.run(
+                lambda: title_box.__setitem__("title", generate_title(content))),
             daemon=True,
         )
         title_thread.start()
@@ -292,9 +380,10 @@ def post_message(conv_id: int, message: MessageIn) -> StreamingResponse:
             result = None
         events.put({"type": "_result", "result": result})
 
-    threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=lambda: ctx.run(worker), daemon=True).start()
 
     def stream():
+        workspace.set_current_user(user_id)  # le générateur peut tourner hors requête
         while True:
             event = events.get()
             if event.get("type") != "_result":
@@ -328,7 +417,7 @@ class ExportIn(BaseModel):
 
 
 @app.post("/api/export")
-def export_deliverable(payload: ExportIn) -> Response:
+def export_deliverable(payload: ExportIn, user_id: str = Depends(current_user)) -> Response:
     exporter = _EXPORTERS.get(payload.format)
     if exporter is None:
         raise HTTPException(400, f"Format inconnu : {payload.format}")

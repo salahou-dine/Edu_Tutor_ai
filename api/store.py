@@ -13,19 +13,24 @@ import json
 import threading
 import time
 
-from config import settings
+from config import workspace
 
-STORE_PATH = settings.DATA_DIR / "conversations_web.json"
 MAX_CONVERSATIONS = 200
 
 _LOCK = threading.Lock()
 
 
+def _store_path():
+    """Fichier de conversations de l'UTILISATEUR courant (isolation multi-user)."""
+    return workspace.conversations_path()
+
+
 def _load() -> dict:
-    if not STORE_PATH.exists():
+    path = _store_path()
+    if not path.exists():
         return {"conversations": [], "next_id": 1}
     try:
-        data = json.loads(STORE_PATH.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(data, dict) and isinstance(data.get("conversations"), list):
             return {"conversations": data["conversations"],
                     "next_id": int(data.get("next_id", 1))}
@@ -36,8 +41,9 @@ def _load() -> dict:
 
 def _save(data: dict) -> None:
     try:
-        STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        STORE_PATH.write_text(
+        path = _store_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
     except OSError:

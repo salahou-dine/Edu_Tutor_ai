@@ -28,6 +28,29 @@ GENERATED_DIR = DATA_DIR / "generated"
 ATTACHMENTS_DIR = DATA_DIR / "attachments"
 # Budget de texte extrait d'une pièce jointe injecté au tuteur (caractères).
 ATTACHMENT_CONTEXT_MAX_CHARS = int(os.getenv("ATTACHMENT_CONTEXT_MAX_CHARS", "15000"))
+
+# Extensions image : ces pièces jointes sont analysées par VISION (le modèle
+# multimodal voit les pixels — schémas, diagrammes) plutôt que par OCR seul.
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp", ".gif")
+
+# --- RAG vision : indexation des schémas/figures des cours ------------------
+#
+# Quand un cours contient des images significatives (schémas, diagrammes,
+# captures), on en génère une DESCRIPTION par vision, indexée comme du texte
+# (donc recherchable). Coûteux (un appel LLM par image) -> filtre de taille,
+# plafond par cours, cache par contenu d'image, et exécution en tâche de fond
+# à l'upload (le texte du cours reste disponible immédiatement).
+RAG_VISION_ENABLED = os.getenv("RAG_VISION_ENABLED", "1") not in ("0", "false", "False")
+# Modèle vision d'indexation : rapide/économique par défaut (Haiku suffit pour
+# une description destinée à la recherche). Vide -> modèle par défaut Hermes.
+RAG_VISION_MODEL = os.getenv("RAG_VISION_MODEL", "anthropic/claude-haiku-4-5")
+# Filtre : on ignore les petites images (logos, puces, icônes).
+RAG_VISION_MIN_WIDTH = int(os.getenv("RAG_VISION_MIN_WIDTH", "300"))
+RAG_VISION_MIN_HEIGHT = int(os.getenv("RAG_VISION_MIN_HEIGHT", "200"))
+# Plafond d'images décrites par cours (borne le coût/temps d'indexation).
+RAG_VISION_MAX_IMAGES = int(os.getenv("RAG_VISION_MAX_IMAGES", "25"))
+# Cache des descriptions (clé = hash du contenu de l'image) -> re-index gratuit.
+VISION_CACHE_DIR = DATA_DIR / "vision_cache"
 # Version du schéma DocumentArtifact : un bump invalide les artefacts en cache.
 # v2 : le texte des sections est désormais stocké dans l'artefact (contrat complet).
 ARTIFACT_SCHEMA_VERSION = 2

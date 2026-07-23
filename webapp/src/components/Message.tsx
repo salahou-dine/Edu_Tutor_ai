@@ -1,3 +1,4 @@
+import { openAuthed } from "../lib/session";
 import { Paperclip } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -20,7 +21,7 @@ export function Message({ message, pdfAvailable }: Props) {
               <button
                 key={attachment.filename}
                 onClick={() =>
-                  window.open(api.attachmentFileUrl(attachment.filename), "_blank")
+                  openAuthed(api.attachmentFileUrl(attachment.filename))
                 }
                 title={`${attachment.filename} — cliquer pour ouvrir`}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs

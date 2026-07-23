@@ -383,16 +383,48 @@ class TestAttachments:
         assert "Contenu du TD sur Modbus." in captured["question"]
         assert "résume ce document" in captured["question"]
 
-    def test_piece_jointe_sans_texte_extrait(self, monkeypatch, corpus):
+    def test_piece_jointe_illisible(self, monkeypatch, corpus):
         import agents.orchestrator as orch
         monkeypatch.setattr(orch, "list_documents", lambda: corpus)
         captured = self._capture_tutor(monkeypatch, orch)
         result = orch.handle(
             "que vois-tu ?",
-            attachments=[{"filename": "photo.png", "text": ""}],
+            attachments=[{"filename": "corrompu.pdf", "text": ""}],  # ni texte ni image
         )
         assert result["status"] == "success"
-        assert "aucun texte n'a pu en être extrait" in captured["question"]
+        assert "aucun contenu n'a pu en être extrait" in captured["question"]
+
+    def test_image_jointe_regardee_par_vision(self, monkeypatch, corpus):
+        """Une image (image_path) -> le tuteur reçoit le CHEMIN + l'ordre de REGARDER
+        (vision native), pas d'OCR."""
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        captured = self._capture_tutor(monkeypatch, orch)
+        result = orch.handle(
+            "explique ce schéma",
+            attachments=[{"filename": "schema.png", "text": "",
+                          "image_path": "/data/attachments/schema.png"}],
+        )
+        assert result["status"] == "success"
+        assert "REGARDE" in captured["question"]
+        assert "/data/attachments/schema.png" in captured["question"]
+        assert "schema.png" in captured["question"]
+
+    def test_image_et_texte_melanges(self, monkeypatch, corpus):
+        """Un message avec une image ET un doc texte : les deux dans le prompt."""
+        import agents.orchestrator as orch
+        monkeypatch.setattr(orch, "list_documents", lambda: corpus)
+        captured = self._capture_tutor(monkeypatch, orch)
+        orch.handle(
+            "compare",
+            attachments=[
+                {"filename": "notes.md", "text": "Contenu textuel des notes."},
+                {"filename": "diagramme.png", "text": "",
+                 "image_path": "/data/attachments/diagramme.png"},
+            ],
+        )
+        assert "Contenu textuel des notes." in captured["question"]     # bloc texte
+        assert "/data/attachments/diagramme.png" in captured["question"]  # bloc image
 
     def test_budget_de_contexte_respecte(self, monkeypatch, corpus):
         import agents.orchestrator as orch

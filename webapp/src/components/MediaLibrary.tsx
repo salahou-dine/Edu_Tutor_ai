@@ -1,3 +1,4 @@
+import { openAuthed } from "../lib/session";
 import { useState } from "react";
 import {
   BookMarked,
@@ -101,7 +102,7 @@ export function MediaLibrary({ items, pdfAvailable }: Props) {
                 key={`${item.conv_id}-${item.index}-${item.title}`}
                 onClick={() =>
                   item.type === "attachment"
-                    ? window.open(api.attachmentFileUrl(item.title), "_blank")
+                    ? openAuthed(api.attachmentFileUrl(item.title))
                     : setSelected(item)
                 }
                 title={`${item.title} — cliquer pour ${

@@ -34,12 +34,15 @@ data/vectorstore/
 # - last_tutor_prompt.md contient un prompt interne (debug).
 data/conversations.json
 data/conversations_web.json
+data/users.json
+data/.session_secret
 data/last_tutor_prompt.md
 
 # Caches multi-agents (régénérables) : artefacts IDP + contenus générés.
 data/artifacts/
 data/generated/
 data/attachments/
+data/vision_cache/
 
 # Config locale Claude Code
 .claude/settings.local.json

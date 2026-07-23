@@ -1,4 +1,4 @@
-import { BookOpen, GraduationCap, Hash, LibraryBig, Plus } from "lucide-react";
+import { BookOpen, GraduationCap, Hash, LibraryBig, LogOut, Plus } from "lucide-react";
 
 import type { ConversationSummary, CourseDoc } from "../lib/api";
 
@@ -9,10 +9,12 @@ interface Props {
   activeId: number | null;
   libraryActive: boolean;
   coursesActive: boolean;
+  userEmail: string;
   onNewChat: () => void;
   onOpenConversation: (id: number) => void;
   onOpenLibrary: () => void;
   onOpenCourses: () => void;
+  onLogout: () => void;
 }
 
 export function Sidebar({
@@ -22,10 +24,12 @@ export function Sidebar({
   activeId,
   libraryActive,
   coursesActive,
+  userEmail,
   onNewChat,
   onOpenConversation,
   onOpenLibrary,
   onOpenCourses,
+  onLogout,
 }: Props) {
   return (
     <aside className="w-72 shrink-0 h-full p-4 flex flex-col gap-5">
@@ -100,6 +104,21 @@ export function Sidebar({
         Mes cours
         <span className="ml-auto text-xs text-muted">{documents.length}</span>
       </button>
+
+      {/* Compte connecté + déconnexion */}
+      <div className="flex items-center gap-2 px-2 pt-1 border-t border-surface-border">
+        <span className="flex-1 truncate text-xs text-muted" title={userEmail}>
+          {userEmail}
+        </span>
+        <button
+          onClick={onLogout}
+          title="Se déconnecter"
+          className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-surface-hover
+                     transition-colors"
+        >
+          <LogOut size={14} />
+        </button>
+      </div>
     </aside>
   );
 }

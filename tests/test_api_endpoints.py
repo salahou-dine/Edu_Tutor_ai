@@ -12,14 +12,23 @@ import pytest
 fastapi = pytest.importorskip("fastapi", reason="fastapi non installé")
 from fastapi.testclient import TestClient  # noqa: E402
 
-from api import main as api_main  # noqa: E402
-from api import store  # noqa: E402
+from api import auth, main as api_main, store  # noqa: E402
+from config import settings, workspace  # noqa: E402
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(store, "STORE_PATH", tmp_path / "conversations_web.json")
-    return TestClient(api_main.app)
+    """TestClient authentifié, isolé dans un workspace temporaire.
+    Aucun appel LLM : le titreur est neutralisé par défaut (les tests qui
+    veulent en observer le comportement le re-mockent)."""
+    monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(auth, "USERS_PATH", tmp_path / "users.json")
+    monkeypatch.setattr(auth, "_SECRET_PATH", tmp_path / ".secret")
+    monkeypatch.setattr(api_main, "generate_title", lambda q: "Titre test")
+    user = auth.create_user("test@test.com", "secret")
+    workspace.set_current_user(user["id"])  # pour les appels DIRECTS au store
+    token = auth.make_token(user["id"])
+    return TestClient(api_main.app, headers={"Authorization": f"Bearer {token}"})
 
 
 def _fake_handle(question, history=None, use_planner=False,
@@ -138,10 +147,10 @@ class TestDocuments:
     def test_suppression_introuvable(self, client):
         assert client.delete("/api/documents/nexiste_pas.pdf").status_code == 404
 
-    def test_ouverture_fichier(self, client, tmp_path, monkeypatch):
-        from config import settings
-        monkeypatch.setattr(settings, "COURSES_DIR", tmp_path)
-        (tmp_path / "cours.md").write_text("# Contenu du cours", encoding="utf-8")
+    def test_ouverture_fichier(self, client):
+        courses = workspace.courses_dir()
+        courses.mkdir(parents=True, exist_ok=True)
+        (courses / "cours.md").write_text("# Contenu du cours", encoding="utf-8")
         resp = client.get("/api/documents/cours.md/file")
         assert resp.status_code == 200
         assert "inline" in resp.headers.get("content-disposition", "")
@@ -153,10 +162,11 @@ class TestDocuments:
 
 class TestAttachments:
     @pytest.fixture
-    def att_dir(self, tmp_path, monkeypatch):
-        from config import settings
-        monkeypatch.setattr(settings, "ATTACHMENTS_DIR", tmp_path / "attachments")
-        return tmp_path / "attachments"
+    def att_dir(self, client):
+        # `client` a déjà posé DATA_DIR + l'utilisateur courant (workspace isolé).
+        d = workspace.attachments_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def test_upload_puis_ouverture(self, client, att_dir):
         resp = client.post("/api/attachments",
@@ -178,6 +188,19 @@ class TestAttachments:
         resp = client.post("/api/attachments",
                            files={"file": ("script.exe", b"MZ", "application/octet-stream")})
         assert resp.status_code == 400
+
+    def test_image_preparee_pour_la_vision(self, client, att_dir):
+        """Une image jointe -> image_path (vue par le modèle), PAS d'OCR."""
+        (att_dir / "schema.png").write_bytes(b"\x89PNG\r\n")  # entête PNG bidon
+        prepared = api_main._attachment_texts(["schema.png"])
+        assert prepared[0]["text"] == ""
+        assert prepared[0]["image_path"].endswith("schema.png")
+
+    def test_document_texte_pas_dimage_path(self, client, att_dir):
+        (att_dir / "notes.md").write_text("# Notes\ncontenu", encoding="utf-8")
+        prepared = api_main._attachment_texts(["notes.md"])
+        assert "image_path" not in prepared[0]
+        assert "contenu" in prepared[0]["text"]
 
     def test_message_avec_piece_jointe(self, client, att_dir, monkeypatch):
         client.post("/api/attachments",

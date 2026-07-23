@@ -5,6 +5,7 @@
  */
 
 import type { ChatEvent } from "./api";
+import { authHeaders } from "./session";
 
 export async function streamMessage(
   conversationId: number,
@@ -14,7 +15,7 @@ export async function streamMessage(
 ): Promise<void> {
   const response = await fetch(`/api/conversations/${conversationId}/messages`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ content, attachments }),
   });
   if (!response.ok || !response.body) {
@@ -53,7 +54,7 @@ export async function downloadDeliverable(
 ): Promise<void> {
   const response = await fetch("/api/export", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ markdown, title, format }),
   });
   if (!response.ok) throw new Error(`Export ${format} : erreur ${response.status}`);

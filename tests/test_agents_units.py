@@ -152,7 +152,7 @@ class TestDocumentStore:
     def test_cache_artefact_round_trip(self, tmp_path, monkeypatch):
         from config import settings
         from agents import document_store
-        monkeypatch.setattr(settings, "ARTIFACTS_DIR", tmp_path / "artifacts")
+        monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
         extraction = Extraction("ok", "fr", 1, [], "good")
         artifact = DocumentArtifact("cafe000000000001", "x.pdf", "x.pdf", extraction)
         document_store.save_artifact(artifact)
@@ -162,7 +162,7 @@ class TestDocumentStore:
     def test_cache_invalide_si_schema_change(self, tmp_path, monkeypatch):
         from config import settings
         from agents import document_store
-        monkeypatch.setattr(settings, "ARTIFACTS_DIR", tmp_path / "artifacts")
+        monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
         extraction = Extraction("ok", "fr", 1, [], "good")
         artifact = DocumentArtifact("cafe000000000002", "x.pdf", "x.pdf", extraction)
         artifact.schema_version = 1  # schéma obsolète
@@ -172,7 +172,7 @@ class TestDocumentStore:
     def test_cache_generated_par_options(self, tmp_path, monkeypatch):
         from config import settings
         from agents import document_store
-        monkeypatch.setattr(settings, "GENERATED_DIR", tmp_path / "generated")
+        monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
         document_store.save_generated("doc1", "summary", {"content": "A"}, {"sections": "all"})
         document_store.save_generated("doc1", "summary", {"content": "B"}, {"sections": ["s1"]})
         assert document_store.load_generated("doc1", "summary", {"sections": "all"})["content"] == "A"

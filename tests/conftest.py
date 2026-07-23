@@ -18,6 +18,17 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def _reset_current_user():
+    """Isole l'utilisateur courant (ContextVar) entre tests : chaque test démarre
+    sur le compte par défaut, et l'état est restauré après (pas de fuite d'un
+    test API qui aurait basculé l'utilisateur)."""
+    from config import workspace
+    token = workspace._current_user.set(workspace.DEFAULT_USER_ID)
+    yield
+    workspace._current_user.reset(token)
+
+
 @pytest.fixture
 def corpus():
     """Corpus réaliste : 3 cours au nom très proche (tokens communs nombreux),

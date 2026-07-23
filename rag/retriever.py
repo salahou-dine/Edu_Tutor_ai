@@ -3,7 +3,7 @@ from pathlib import Path
 import chromadb
 
 from rag.embeddings import get_embedding_function, collection_metadata
-from config import settings
+from config import settings, workspace
 
 
 def list_indexed_courses() -> list[dict]:
@@ -16,7 +16,7 @@ def list_indexed_courses() -> list[dict]:
     client = chromadb.PersistentClient(path=str(settings.VECTORSTORE_PATH))
     try:
         collection = client.get_or_create_collection(
-            name=settings.COLLECTION_NAME,
+            name=workspace.collection_name(),
             embedding_function=get_embedding_function(),
             metadata=collection_metadata(),
         )
@@ -55,7 +55,7 @@ def get_course_chunks(course: str) -> list[dict]:
     client = chromadb.PersistentClient(path=str(settings.VECTORSTORE_PATH))
     try:
         collection = client.get_or_create_collection(
-            name=settings.COLLECTION_NAME,
+            name=workspace.collection_name(),
             embedding_function=get_embedding_function(),
             metadata=collection_metadata(),
         )
@@ -88,7 +88,7 @@ def search_course(query: str, n_results: int = settings.RETRIEVAL_TOP_K):
     """
     client = chromadb.PersistentClient(path=str(settings.VECTORSTORE_PATH))
     collection = client.get_or_create_collection(
-        name=settings.COLLECTION_NAME,
+        name=workspace.collection_name(),
         embedding_function=get_embedding_function(),
         metadata=collection_metadata(),
     )
