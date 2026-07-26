@@ -5,13 +5,18 @@
 > contexte, architecture, rôle de chaque fichier, et **chaque décision** avec sa
 > justification.
 >
-> Date : **2026-07-21** (3ᵉ révision majeure). Le projet est passé, depuis les
+> Date : **2026-07-23** (4ᵉ révision majeure). Le projet est passé, depuis les
 > versions précédentes de cet audit : (1) d'un tuteur mono-agent à un **système
 > multi-agents** ; (2) d'une interface **Streamlit** à un **front web React +
-> API FastAPI** avec streaming des réponses. Périmètre : tout le code source
-> (hors `.venv`, `node_modules`, `data/`, caches) — ~5 100 lignes Python
-> (`agents/` `rag/` `services/` `config/` `api/`), ~1 700 lignes TypeScript
-> (`webapp/src/`), 200 tests.
+> API FastAPI** avec streaming des réponses ; (3) d'une hypothèse mono-utilisateur
+> à une plateforme **multi-utilisateur en isolation totale** (auth par token,
+> workspace et collection ChromaDB par compte). Périmètre : tout le code source
+> (hors `.venv`, `node_modules`, `data/`, caches) — ~5 400 lignes Python
+> (`agents/` `rag/` `services/` `config/` `api/`), ~1 800 lignes TypeScript
+> (`webapp/src/`), ~220 tests.
+>
+> Voir aussi `docs/DOSSIER_TECHNIQUE.md` (+ PDF) : dossier de défense orienté
+> **décisions d'ingénierie** (alternatives écartées et pourquoi).
 
 ---
 
@@ -97,7 +102,11 @@ version, badge « v{n} ».
 - Le framework `hermes-agent/` n'est modifié que par **un patch opt-in
   documenté** (`docs/hermes-oneshot-streaming.patch`, cf. §6.8) ; la méthode
   d'extension reste la création de **skills** (5 skills `education-*`).
-- Hypothèse **mono-utilisateur** (pas d'auth).
+- **Multi-utilisateur en isolation totale** : chaque compte a son workspace
+  (`data/users/<uid>/…`) ET sa propre collection ChromaDB (`course_chunks__<uid>`)
+  — isolation *par construction*, impossible de fuiter les cours d'un autre par
+  un filtre oublié. L'utilisateur courant vit dans une `ContextVar` posée par
+  l'API ; les couches profondes la lisent sans recevoir `user_id` en paramètre.
 
 ### 1.6 Modèles LLM
 
@@ -151,7 +160,8 @@ archivée), avec les dépendances externes documentées (Hermes, Tesseract, Node
 │ api/  FastAPI (:8000) — façade SANS logique métier                    │
 │   main.py : health · documents(GET/upload/DELETE/file) · deliverables │
 │   · attachments · conversations CRUD · POST messages (SSE) · export   │
-│   store.py : conversations_web.json (persistance front, verrou)       │
+│   auth.py : PBKDF2 + tokens HMAC · workspace : ContextVar par user    │
+│   store.py : data/users/<uid>/conversations.json (verrou)             │
 │        appelle ↓ (le MÊME cœur que l'ancienne UI Streamlit)           │
 │ agents/  orchestrator (planner LLM + table d'intention, réparation,   │
 │   exécution, composition, livrables+lignée, révision, streaming) ·    │
@@ -208,14 +218,20 @@ index_all_courses(reset=True) = REBUILD complet (si logique de découpage change
 
 ### 3.5 Données sur disque
 
+**Isolation par utilisateur** : sauf le vectorstore (une base, une collection par
+compte) et les fichiers d'auth, toutes les données vivent sous `data/users/<uid>/`.
+
 | Chemin | Contenu | Git |
 |---|---|---|
-| `data/courses/` | cours actifs (sources de vérité) | ignoré de fait |
-| `data/vectorstore/` | ChromaDB (métadonnées source/title/section/page/mtime) | ignoré |
-| `data/artifacts/<doc_id>.json` | artefacts IDP (schema v2, texte des sections) | ignoré |
-| `data/generated/…json` | contenus générés (cache par doc/type/options) | ignoré |
-| `data/attachments/` | pièces jointes du chat (hors RAG) | ignoré |
-| `data/conversations_web.json` | discussions du front React | ignoré (sensible) |
+| `data/users/<uid>/courses/` | cours actifs du compte (sources de vérité) | ignoré de fait |
+| `data/users/<uid>/artifacts/<doc_id>.json` | artefacts IDP (schema v2, texte des sections) | ignoré |
+| `data/users/<uid>/generated/…json` | contenus générés (cache par doc/type/options) | ignoré |
+| `data/users/<uid>/attachments/` | pièces jointes du chat (hors RAG) | ignoré |
+| `data/users/<uid>/conversations.json` | discussions du compte (front React) | ignoré (sensible) |
+| `data/vectorstore/` | ChromaDB — **une collection `course_chunks__<uid>` par compte** (source/title/section/page/mtime/kind) | ignoré |
+| `data/users.json` | comptes (email + hash PBKDF2 + sel ; jamais de clair) | ignoré (sensible) |
+| `data/.session_secret` | clé HMAC de signature des tokens (0600, persistée) | ignoré (sensible) |
+| `data/vision_cache/<hash>.json` | descriptions de figures (cache par contenu d'image) | ignoré |
 | `data/conversations.json` | discussions de l'UI Streamlit archivée | ignoré (sensible) |
 | `~/.hermes/skills/education/…` | 5 skills (hors repo) | hors périmètre |
 
@@ -227,24 +243,28 @@ index_all_courses(reset=True) = REBUILD complet (si logique de découpage change
 
 | Fichier | Lignes | Rôle |
 |---|---|---|
-| `api/main.py` | 343 | Façade HTTP : documents, conversations, chat SSE, pièces jointes, Bibliothèque, exports. Aucune logique métier. |
-| `api/store.py` | 189 | Persistance des conversations du front (`conversations_web.json`), regroupement des livrables par lignée. |
-| `agents/orchestrator.py` | 804 | Cœur d'orchestration : planner LLM + table d'intention, réparation, exécution, composition, livrables+lignée, révision, pièces jointes, streaming, trace. |
+| `api/main.py` | 432 | Façade HTTP : auth + contexte utilisateur (middleware + `Depends(current_user)` → 401), documents, conversations, chat SSE, pièces jointes, Bibliothèque, exports. Aucune logique métier. |
+| `api/auth.py` | 183 | Comptes identifiant + mot de passe : hachage **PBKDF2** (200k, sel), tokens **HMAC stateless** (`make_token`/`read_token`), compte par défaut. |
+| `api/store.py` | 195 | Persistance des conversations **de l'utilisateur courant** (`data/users/<uid>/conversations.json`), regroupement des livrables par lignée. |
+| `config/workspace.py` | 69 | Espace de travail par utilisateur : `ContextVar` + helpers de chemins (`courses_dir`…) et nom de collection ChromaDB (`collection_name`). |
+| `scripts/migrate_to_multiuser.py` | — | Migration idempotente des données pré-multi-utilisateur vers `data/users/u_salah/` + renommage de la collection. |
+| `agents/orchestrator.py` | 827 | Cœur d'orchestration : planner LLM + table d'intention, réparation, exécution, composition, livrables+lignée, révision, pièces jointes, streaming, trace. |
 | `agents/tutor_agent.py` | 735 | Agent tuteur : RAG → mode → prompt (par mode) → Hermes (streamé) ; résumé global ; clarification ; double sortie. |
 | `agents/content_agent.py` | 260 | Résumé / fiche à partir de l'artefact ; contrats `needs_analysis`/`not_processable` ; cache. |
 | `agents/idp_agent.py` | 248 | Analyse Hermes validée/ancrée section_id ; cache ; retry ×2. |
 | `agents/compose_agent.py` | 211 | Rédaction de document original + révision d'un livrable existant. |
 | `agents/artifact.py` | 158 | `DocumentArtifact` v2 (extraction déterministe + analysis), détection de langue. |
 | `agents/presenter.py` | 109 | Artefact → Markdown étudiant, filtrage des section_ids. |
-| `agents/document_store.py` | 95 | `doc_id` = SHA-256 du contenu ; caches JSON artefacts + générés. |
+| `agents/document_store.py` | 95 | `doc_id` = SHA-256 du contenu ; caches JSON artefacts + générés (dossiers résolus par `workspace`, donc par utilisateur). |
 | `agents/registry.py` | 78 | Capacités déclaratives {tutor, idp, content, compose} (menu planner + validation). |
 | `agents/titler.py` | 58 | Titre de discussion (3-6 mots) via Hermes neutre, modèle rapide. |
 | `agents/common.py` | 50 | `extract_json` : parsing tolérant des sorties LLM. |
 | `services/hermes_adapter.py` | 274 | Unique point d'appel Hermes (CLI `-z`, skill/modèle optionnels), **streaming** (protocole NUL), retry, journal. |
 | `services/exporters.py` | 142 | Livrable Markdown → .docx (python-docx), .md, .pdf (xhtml2pdf, optionnel). |
-| `config/settings.py` | 145 | Réglages centraux, env-surchargeables. |
+| `config/settings.py` | 168 | Réglages centraux, env-surchargeables (chemins, RAG, vision, seuils, Hermes). |
 | `rag/document_loader.py` | 470 | Extraction structurée multi-formats (md/txt/pdf+OCR/docx/pptx/images), détection de titres multi-signaux. |
-| `rag/indexer.py` | 253 | Sync incrémental (mtime) + rebuild par collection temporaire. |
+| `rag/indexer.py` | 343 | Sync incrémental (mtime) + rebuild par collection temporaire + enrichissement vision ; collection résolue par `workspace`. |
+| `rag/vision_describe.py` | 143 | Description des figures/schémas d'un cours par vision (cache par hash, garde-fous), indexées comme texte recherchable. |
 | `rag/retriever.py` | 142 | Recherche (vivier 20), inventaire cours, chunks d'un cours, délégation reranker. |
 | `rag/chunker.py` | 131 | `chunk_segments` : segments → chunks structure-aware (900 car., jamais 2 sections fusionnées). |
 | `rag/source_formatter.py` | 119 | Chunks → indications lisibles `{course, part, excerpt}`. |
@@ -255,8 +275,10 @@ index_all_courses(reset=True) = REBUILD complet (si logique de découpage change
 
 | Fichier | Rôle |
 |---|---|
-| `App.tsx` | État global (documents, conversations, deliverables, messages, progress, liveText, view) ; orchestration du flux SSE ; 3 vues (chat / library / courses). |
-| `components/Sidebar.tsx` | Marque, Nouvelle discussion, Discussions (#), Bibliothèque, Mes cours. |
+| `App.tsx` | État global (dont **session** : `undefined`=vérif / `null`=déconnecté / `User`) ; `setUnauthorizedHandler` ; chargement des données après connexion ; orchestration du flux SSE ; 3 vues (chat / library / courses) ; `logout`. |
+| `components/Login.tsx` | Écran de connexion / inscription (identifiant + mot de passe). |
+| `lib/session.ts` | Jeton en `localStorage` ; `authFetch` (401 → déconnexion) ; `openAuthed` (fichier protégé via `fetch → blob → window.open`). |
+| `components/Sidebar.tsx` | Marque, Nouvelle discussion, Discussions (#), Bibliothèque, Mes cours, **compte connecté + déconnexion**. |
 | `components/Home.tsx` | Écran d'accueil : 6 cartes d'objectif → pastilles de cours / saisie préfixée. |
 | `components/ChatView.tsx` | Fil de messages + timeline de progression + texte streamé (curseur). |
 | `components/Message.tsx` | Bulle user (+ chips pièces jointes) / réponse (badge de mode + agents + markdown + carte). |
@@ -295,12 +317,19 @@ Endpoints (aucune logique métier — délègue à `agents`/`services`/`store`) 
   transitent par une `queue.Queue` ; le titre est généré en parallèle (thread).
 - **Export** : `POST /api/export` → .docx/.md/.pdf via `services.exporters`.
 
-CORS ouvert sur `localhost:5173` (dev, mono-utilisateur).
+**Auth & contexte** : un middleware lit le token `Authorization: Bearer` et pose
+l'utilisateur courant (`workspace.set_current_user`) pour toute la requête ; la
+dépendance `Depends(current_user)` protège chaque endpoint (401 sans token
+valide). Les threads du chat/titrage capturent le contexte
+(`contextvars.copy_context()` + `ctx.run`) car une `ContextVar` ne se propage pas
+d'elle-même aux threads. Accès fichiers via `Path(name).name` (anti-traversée).
+CORS ouvert sur `localhost:5173` (front de dev Vite).
 
 ### 5.2 `api/store.py` — persistance du front
 
-`conversations_web.json` (séparé de Streamlit), accès sérialisé (verrou),
-plafond 200. **`list_all_deliverables`** : collecte tous les livrables +
+`data/users/<uid>/conversations.json` (chemin résolu par `workspace`, donc
+**par utilisateur**), accès sérialisé (verrou), plafond 200.
+**`list_all_deliverables`** : collecte tous les livrables +
 pièces jointes, **regroupe par lignée `id`** (garde la version max, ajoute
 `version_count`), les entrées sans `id` (anciens livrables, pièces jointes)
 forment chacune leur lignée (jamais fusionnées par titre).
@@ -448,6 +477,17 @@ Bibliothèque. Ne pas y développer.
     logos/photos). À l'upload, l'enrichissement tourne en **tâche de fond**
     (verrou d'écriture) : le texte du cours est disponible immédiatement, les
     figures s'ajoutent ensuite. Rebuild complet : `index_all_courses(with_vision=True)`.
+16. **Multi-utilisateur en isolation *par construction*** — plutôt qu'une
+    collection ChromaDB partagée filtrée par `user_id` (un filtre oublié fuiterait
+    tout), **une collection par compte** (`course_chunks__<uid>`) + un workspace
+    disque par compte (`data/users/<uid>/`). L'utilisateur courant transite par une
+    **`ContextVar`** (posée par un middleware) que les couches profondes lisent
+    sans le recevoir en paramètre ; les threads du chat capturent ce contexte.
+17. **Auth minimale mais correcte** — mots de passe **PBKDF2-HMAC-SHA256** (200k,
+    sel, `compare_digest` ; zéro dépendance), sessions par **token HMAC
+    *stateless*** (rien à stocker, survit au redémarrage ; secret persisté en
+    `0600`). Choisi contre JWT (dépendance/surface d'attaque) et sessions serveur
+    (stockage à maintenir). Limite assumée : pas de révocation fine.
 
 ---
 
@@ -485,19 +525,26 @@ Bibliothèque. Ne pas y développer.
   (elle s'appuie sur les descriptions indexées).
 - **Qualité RAG** (embedding/seuils) : laissée en l'état, à revoir si la perf le
   justifie.
-- **Mono-utilisateur** : pas d'auth ni de concurrence.
+- **Mono-serveur** : persistance JSON + verrous process-locaux (adaptés à une
+  faible concurrence). Le multi-utilisateur est en place (auth + isolation par
+  compte), mais une montée en charge multi-process/serveur exigerait une base
+  transactionnelle et un vectorstore partagé. Pas de révocation fine des tokens
+  (changer le secret invalide toutes les sessions).
 - **Front** : pas de test automatisé (validé au screenshot Playwright + tests
   API) ; pas d'édition inline façon Canvas (une révision = un nouveau message).
 - **Patch Hermes** : à réappliquer manuellement en cas de mise à jour d'Hermes.
 
 ### 7.3 Tests
 
-**200 tests** (`.venv/bin/python -m pytest tests/`), sans appel LLM ni
+**210 tests** (`.venv/bin/python -m pytest tests/`), sans appel LLM ni
 vectorstore : routage & orchestration (dont les 2 pièges verrouillés, filet
 déterministe, lignée des livrables), logique tuteur, unités RAG, briques agents
 (validation/ancrage IDP, presenter, artefact, caches), exporters, adaptateur
 Hermes (commande, retry, streaming NUL, UTF-8), API (endpoints, SSE mocké,
-pièces jointes, Bibliothèque groupée). Le front n'a pas de tests automatisés.
+pièces jointes, Bibliothèque groupée), **auth** (hachage, tokens, round-trip),
+**isolation multi-utilisateur** (workspaces + collections cloisonnés), **vision
+RAG**. Une *fixture* d'autoreset de la `ContextVar` évite les fuites de contexte
+entre tests. Le front n'a pas de tests automatisés.
 
 ---
 

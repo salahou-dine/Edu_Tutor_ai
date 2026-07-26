@@ -41,9 +41,10 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp", "
 # plafond par cours, cache par contenu d'image, et exécution en tâche de fond
 # à l'upload (le texte du cours reste disponible immédiatement).
 RAG_VISION_ENABLED = os.getenv("RAG_VISION_ENABLED", "1") not in ("0", "false", "False")
-# Modèle vision d'indexation : rapide/économique par défaut (Haiku suffit pour
-# une description destinée à la recherche). Vide -> modèle par défaut Hermes.
-RAG_VISION_MODEL = os.getenv("RAG_VISION_MODEL", "anthropic/claude-haiku-4-5")
+# Modèle vision d'indexation : rapide/économique et MULTIMODAL par défaut (une
+# description destinée à la recherche n'exige pas le grand modèle). Doit voir les
+# pixels -> un modèle Gemini Flash convient. Vide -> modèle par défaut Hermes.
+RAG_VISION_MODEL = os.getenv("RAG_VISION_MODEL", "gemini-flash-latest")
 # Filtre : on ignore les petites images (logos, puces, icônes).
 RAG_VISION_MIN_WIDTH = int(os.getenv("RAG_VISION_MIN_WIDTH", "300"))
 RAG_VISION_MIN_HEIGHT = int(os.getenv("RAG_VISION_MIN_HEIGHT", "200"))
@@ -146,7 +147,8 @@ DEFAULT_SKILL_NAME = os.getenv("HERMES_SKILL_NAME", "education-tutor")
 # quelques mots — un grand modèle y est surdimensionné (latence ×3-4 pour rien).
 # Les agents qui RÉDIGENT (tuteur, IDP, contenu, compose) restent sur le modèle
 # par défaut configuré côté Hermes. Vide ("") -> désactive l'override.
-HERMES_FAST_MODEL = os.getenv("HERMES_FAST_MODEL", "anthropic/claude-haiku-4-5")
+# NB : l'ID doit correspondre au provider configuré côté Hermes (ici : gemini).
+HERMES_FAST_MODEL = os.getenv("HERMES_FAST_MODEL", "gemini-flash-lite-latest")
 
 # Résumé global d'un cours : on envoie le TEXTE INTÉGRAL du cours en UN seul
 # appel (comme ChatGPT : tout le document tient dans le contexte). Garde-fou :
