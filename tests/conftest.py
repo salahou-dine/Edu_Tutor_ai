@@ -22,8 +22,10 @@ if str(PROJECT_ROOT) not in sys.path:
 def _reset_current_user():
     """Isole l'utilisateur courant (ContextVar) entre tests : chaque test démarre
     sur le compte par défaut, et l'état est restauré après (pas de fuite d'un
-    test API qui aurait basculé l'utilisateur)."""
-    from config import workspace
+    test API qui aurait basculé l'utilisateur). Désactive aussi le spawn des
+    workers Hermes (les tests ne doivent jamais démarrer de process Hermes)."""
+    from config import settings, workspace
+    settings.HERMES_WORKERS_ENABLED = False
     token = workspace._current_user.set(workspace.DEFAULT_USER_ID)
     yield
     workspace._current_user.reset(token)

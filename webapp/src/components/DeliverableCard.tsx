@@ -64,8 +64,10 @@ export function DeliverableCard({ deliverable, pdfAvailable }: Props) {
           </button>
         </div>
 
-        {/* Aperçu défilant */}
-        <div className="max-h-72 overflow-y-auto px-4 py-3 md-body text-sm">
+        {/* Contenu complet, déroulé dans le chat (plus de plafond ni de scroll
+            interne : la page défile normalement). Le bouton Agrandir reste
+            disponible pour une lecture plein écran. */}
+        <div className="px-4 py-3 md-body text-sm">
           <ReactMarkdown>{deliverable.markdown}</ReactMarkdown>
         </div>
 

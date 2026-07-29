@@ -6,6 +6,7 @@ Aucune clé API ici. Tous les chemins sont dérivés de la racine du projet
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 # --- Chemins principaux -----------------------------------------------------
@@ -142,6 +143,26 @@ MIXED_MAX_DISTANCE = 0.65            # < seuil  -> mixed, sinon general_tutor
 
 DEFAULT_SKILL_NAME = os.getenv("HERMES_SKILL_NAME", "education-tutor")
 
+# Workers Hermes PERSISTANTS (« Hermes chaud ») : liste de chemins de sockets
+# Unix séparés par des virgules. Si RENSEIGNÉ, l'adaptateur envoie les prompts à
+# ces workers (agent chaud -> pas de cold-start ~10 s par message) et retombe sur
+# la CLI `hermes -z` si aucun n'est joignable. VIDE (défaut) -> 100 % CLI, comme
+# avant. Renseigné automatiquement par l'API quand elle lance ses workers.
+HERMES_WORKER_SOCKETS = os.getenv("HERMES_WORKER_SOCKETS", "")
+
+# --- Démarrage automatique des workers par l'API (cycle de vie, 2d) ----------
+# Chemins vers le runtime Hermes — À SURCHARGER en conteneur.
+HERMES_AGENT_ROOT = os.getenv("HERMES_AGENT_ROOT", str(PROJECT_ROOT.parent / "hermes-agent"))
+HERMES_VENV_PYTHON = os.getenv(
+    "HERMES_VENV_PYTHON", str(PROJECT_ROOT.parent / "hermes-agent" / "venv" / "bin" / "python")
+)
+# Auto-spawn des workers chauds au boot de l'API. Si le runtime Hermes est
+# introuvable, on n'échoue pas : on retombe sur la CLI `hermes -z`.
+HERMES_WORKERS_ENABLED = os.getenv("HERMES_WORKERS_ENABLED", "1") not in ("0", "false", "False")
+HERMES_WORKER_COUNT = max(1, int(os.getenv("HERMES_WORKER_COUNT", "1")))
+# Dossier des sockets Unix (chemins COURTS : limite système ~108 caractères).
+HERMES_WORKER_SOCKET_DIR = os.getenv("HERMES_WORKER_SOCKET_DIR", tempfile.gettempdir())
+
 # Modèle RAPIDE pour les appels utilitaires courts (planner de l'orchestrateur,
 # titrage des discussions) : ces appels ne produisent qu'un petit JSON ou
 # quelques mots — un grand modèle y est surdimensionné (latence ×3-4 pour rien).
@@ -149,6 +170,13 @@ DEFAULT_SKILL_NAME = os.getenv("HERMES_SKILL_NAME", "education-tutor")
 # par défaut configuré côté Hermes. Vide ("") -> désactive l'override.
 # NB : l'ID doit correspondre au provider configuré côté Hermes (ici : gemini).
 HERMES_FAST_MODEL = os.getenv("HERMES_FAST_MODEL", "gemini-flash-lite-latest")
+
+# Planner LLM de l'orchestrateur : DÉSACTIVÉ par défaut (0) -> routage
+# DÉTERMINISTE (table d'intention regex), sans appel LLM supplémentaire. Le
+# planner ajoutait ~1 appel Hermes par message (~10 s de démarrage CLI) pour un
+# gain marginal sur les formulations libres. HERMES_USE_PLANNER=1 le réactive.
+# Le routage déterministe est de toute façon le chemin « primaire » de conception.
+HERMES_USE_PLANNER = os.getenv("HERMES_USE_PLANNER", "0") in ("1", "true", "True")
 
 # Résumé global d'un cours : on envoie le TEXTE INTÉGRAL du cours en UN seul
 # appel (comme ChatGPT : tout le document tient dans le contexte). Garde-fou :

@@ -19,6 +19,7 @@ import json
 import queue
 import sys
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Racine du projet importable quel que soit le cwd d'uvicorn.
@@ -44,7 +45,45 @@ from services.exporters import (
 from rag.indexer import sync_courses_index
 from api import auth, store
 
-app = FastAPI(title="EduTutor API", version="0.1.0")
+def _warm_rag_models() -> None:
+    """Précharge embedding + reranker EN RAM (au démarrage, pas au 1er message).
+
+    Le chargement de ces modèles (~0,5 Go) se faisait paresseusement à la
+    première recherche RAG, pénalisant le tout premier message. On le déplace au
+    boot pour que le chat soit réactif dès la première question. Best-effort :
+    un échec de préchauffage ne doit pas empêcher le serveur de démarrer.
+    """
+    try:
+        from rag.embeddings import get_embedding_function
+        get_embedding_function()(["préchauffage"])  # force le chargement réel
+    except Exception:
+        pass
+    try:
+        from rag.reranker import get_cross_encoder
+        get_cross_encoder()  # charge le cross-encoder (si activé)
+    except Exception:
+        pass
+
+
+@asynccontextmanager
+async def lifespan(app: "FastAPI"):
+    # Préchauffage en TÂCHE DE FOND (non bloquant) : le serveur est prêt
+    # immédiatement, les modèles chauffent pendant que l'utilisateur se connecte
+    # et saisit sa 1re question. Un préchargement bloquant retarderait (voire
+    # gèlerait, sur vérif réseau HF Hub) le démarrage — à proscrire.
+    threading.Thread(target=_warm_rag_models, daemon=True).start()
+    # Workers Hermes chauds : lancés en fond, supervisés, coupés à l'arrêt.
+    # Le spawn (Popen) ne bloque pas ; le préchauffage (~6 s) se fait dans le
+    # worker, l'adaptateur retombe sur la CLI tant qu'un socket n'est pas prêt.
+    from services import hermes_worker_manager
+    hermes_worker_manager.start()
+    try:
+        yield
+    finally:
+        hermes_worker_manager.stop()
+
+
+app = FastAPI(title="EduTutor API", version="0.1.0", lifespan=lifespan)
 
 # Compte propriétaire des données pré-existantes (créé au démarrage).
 auth.ensure_default_user()
@@ -356,14 +395,19 @@ def post_message(conv_id: int, message: MessageIn, user_id: str = Depends(curren
     store.append_messages(conv_id, [user_message])
 
     events: queue.Queue = queue.Queue()
-    ctx = contextvars.copy_context()  # capture l'utilisateur courant pour les threads
+
+    # Chaque thread reçoit SA PROPRE copie du contexte (qui capture l'utilisateur
+    # courant) : un même objet Context ne peut pas être « entré » (ctx.run) par
+    # deux threads à la fois — sinon RuntimeError « cannot enter context: is
+    # already entered », le worker meurt et le flux SSE tourne sans jamais répondre.
 
     # Titre de la discussion : en PARALLÈLE de la réponse (latence masquée).
     title_box: dict = {}
     title_thread = None
     if is_first:
+        title_ctx = contextvars.copy_context()
         title_thread = threading.Thread(
-            target=lambda: ctx.run(
+            target=lambda: title_ctx.run(
                 lambda: title_box.__setitem__("title", generate_title(content))),
             daemon=True,
         )
@@ -372,7 +416,7 @@ def post_message(conv_id: int, message: MessageIn, user_id: str = Depends(curren
     def worker() -> None:
         try:
             result = orchestrator.handle(
-                content, history=history, use_planner=True,
+                content, history=history, use_planner=settings.HERMES_USE_PLANNER,
                 last_deliverable=deliverable, on_event=events.put,
                 attachments=attachments or None,
             )
@@ -380,7 +424,8 @@ def post_message(conv_id: int, message: MessageIn, user_id: str = Depends(curren
             result = None
         events.put({"type": "_result", "result": result})
 
-    threading.Thread(target=lambda: ctx.run(worker), daemon=True).start()
+    worker_ctx = contextvars.copy_context()
+    threading.Thread(target=lambda: worker_ctx.run(worker), daemon=True).start()
 
     def stream():
         workspace.set_current_user(user_id)  # le générateur peut tourner hors requête

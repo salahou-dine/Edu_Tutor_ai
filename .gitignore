@@ -44,5 +44,10 @@ data/generated/
 data/attachments/
 data/vision_cache/
 
+# Données runtime PAR UTILISATEUR (cours, artefacts, générés, conversations, PJ) :
+# sensibles et régénérables — jamais versionnées.
+data/users/
+data/hermes_worker_*.log
+
 # Config locale Claude Code
 .claude/settings.local.json
