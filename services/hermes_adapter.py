@@ -239,7 +239,10 @@ def _ask_via_cli_once(
     """UN appel Hermes via la CLI one-shot (le chemin historique, filet de sécurité)."""
     # Liste d'arguments (pas de shell) -> pas d'injection, prompt brut sûr.
     # skill_name=None -> appel Hermes SANS skill (utilitaire neutre, ex. titrage).
-    cmd = [hermes_bin, "-z", prompt]
+    # --ignore-rules : ISOLATION (parité avec le worker) -> coupe la mémoire
+    # persistante partagée de Hermes + SOUL.md/AGENTS.md, pour qu'un fait « retenu »
+    # ne fuite pas entre requêtes/étudiants. N'affecte pas `--skills` (explicite).
+    cmd = [hermes_bin, "-z", prompt, "--ignore-rules"]
     if model:
         cmd += ["-m", model]
     if skill_name:

@@ -41,10 +41,14 @@
           "status": "success",
           "content": "Bonjour ! Je vais t'expliquer ce qu'est la conductivité.\n\n**Précision importante :** je n'ai accès à aucun cours indexé pour cette question, donc ma réponse s'appuie sur des connaissances générales en physique/chimie.\n\n---\n\n**La conductivité**, c'est la capacité d'un matériau à laisser circuler quelque chose à travers lui. Le terme s'utilise principalement dans deux contextes :\n\n**1. Conductivité électrique** — C'est la capacité d'un matériau à laisser passer le courant électrique. Les métaux (cuivre, aluminium) sont de bons conducteurs ; le caoutchouc ou le verre sont des isolants. L'unité est le siemens par mètre (S/m).\n\n**2. Conductivité thermique** — C'est la capacité d'un matériau à transmettre la chaleur. Par exemple, les métaux conduisent bien la chaleur (on le sent quand on touche une cuillère en métal chaude), tandis que la laine ou le bois sont de bons isolants thermiques. L'unité est le watt par mètre-kelvin (W/(m·K)).\n\nDans les deux cas, c'est l'inverse de la **résistivité** (ou résistance thermique) : un bon conducteur a une faible résistance au passage du courant ou de la chaleur.\n\n---\n\nTu veux que j'approfondisse l'un des deux types, ou que je t'explique un exemple concret ?",
           "mode": "general_tutor"
+        },
+        {
+          "role": "user",
+          "content": "Que sait tu faire ?"
         }
       ],
       "created_at": 1782385929.4951124,
-      "updated_at": 1782741430.5059192
+      "updated_at": 1785102323.921853
     },
     {
       "id": 2,
@@ -393,7 +397,543 @@
       "created_at": 1783952220.3883934,
       "updated_at": 1783952362.4433372,
       "title_generated": true
+    },
+    {
+      "id": 8,
+      "title": "Nouvelle discussion",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Qui es-tu et que peux-tu faire pour m'aider ?"
+        }
+      ],
+      "created_at": 1785102209.4654477,
+      "updated_at": 1785102211.093281
+    },
+    {
+      "id": 9,
+      "title": "Nouvelle discussion",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Bonjour, un test rapide."
+        }
+      ],
+      "created_at": 1785102296.5531285,
+      "updated_at": 1785102296.911599
+    },
+    {
+      "id": 10,
+      "title": "Nouvelle discussion",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Qui es-tu et que peux-tu faire pour m'aider ?"
+        }
+      ],
+      "created_at": 1785102468.7754722,
+      "updated_at": 1785102469.2021422
+    },
+    {
+      "id": 11,
+      "title": "Nouvelle discussion",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Bonjour, peux-tu te présenter en une phrase ?"
+        }
+      ],
+      "created_at": 1785134419.9107327,
+      "updated_at": 1785134420.0247738
+    },
+    {
+      "id": 12,
+      "title": "Présentation de l'agent",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Bonjour, présente-toi en une phrase."
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nBonjour, je suis EduTutor, un tuteur académique dédié à t'accompagner dans ton apprentissage en t'expliquant tes cours, en t'aidant à résoudre tes exercices, en recherchant des informations et en produisant des supports adaptés à tes révisions.\n\n**Explication**\nMon rôle de tuteur consiste à mobiliser l'ensemble de mes capacités pédagogiques et techniques uniquement pour soutenir ta compréhension et ta réussite académique. Plutôt que d'agir comme un assistant générique, je t'aide à décomposer les notions complexes, à structurer tes connaissances et à t'entraîner activement.\n*(Précision pédagogique : Cette présentation relève de ma posture de tuteur général et n'est pas issue du contenu de ton cours).*\n\n**Exemple**\nSi tu étudies un concept complexe (comme la cybersécurité des systèmes industriels OT), tu peux me solliciter pour que je t'explique une notion pas à pas, que je te donne une illustration concrète ou que je génère un schéma visuel pour t'aider à réviser.\n\n**Indication de la partie du cours**\nCette présentation de ton tuteur est une information générale qui ne figure dans aucune partie des cours fournis.\n\n**Question de vérification**\nAs-tu bien compris le rôle que je joue à tes côtés, et quel sujet ou chapitre souhaites-tu étudier ensemble aujourd'hui ?",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1785134676.2262862,
+      "updated_at": 1785134713.4964075
+    },
+    {
+      "id": 13,
+      "title": "Présentation rapide de l'assistant",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Bonjour, présente-toi en une phrase."
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nBonjour, je suis EduTutor, votre tuteur académique dédié à votre réussite pour vous aider à comprendre vos cours, résoudre vos exercices, chercher des informations ciblées et générer des supports visuels au service de vos révisions.\n\n**Explication**\n- Ce que dit le cours : Les extraits du cours fournis traitent de la cybersécurité des systèmes industriels (OT), de la gestion des incidents, des zones d'entreprise et d'outils Windows (Event Viewer, boîte de dialogue « Run »), mais ne contiennent aucune information sur mon identité.\n- Complément pédagogique général : Mon rôle de tuteur est de vous accompagner dans votre apprentissage. Je reformule les concepts complexes avec des mots simples, j'illustre la théorie par des cas pratiques et je peux mobiliser diverses capacités pédagogiques (recherche documentaire, création d'illustrations) pour faciliter votre compréhension.\n\n**Exemple**\nPar exemple, si vous étudiez la gestion d'incidents dans votre cours de cybersécurité OT, je peux vous expliquer la différence entre le confinement à court terme et le confinement à long terme, puis vous proposer un cas pratique pour appliquer cette notion à un système industriel.\n\n**Indication de la partie du cours**\nCette présentation relève de mon rôle de tuteur pédagogique et ne figure dans aucun des extraits du cours de cybersécurité OT fournis.\n\n**Question de vérification**\nSur quel sujet ou chapitre de votre cours souhaitez-vous que nous travaillions ensemble aujourd'hui ?",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Quelle est la difference entre IT et OT ?"
+        }
+      ],
+      "created_at": 1785134914.7603462,
+      "updated_at": 1785135016.4976778
+    },
+    {
+      "id": 14,
+      "title": "Présentation et capacités de l'agent",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Qui es-tu et que peux-tu faire pour m'aider ?"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Je suis EduTutor, votre tuteur académique. Je suis là pour vous accompagner dans votre apprentissage et vous aider à progresser.\n\nVoici comment je peux vous aider au quotidien :\n- **Comprendre vos cours** : vous expliquer des notions complexes avec des mots simples, reformuler des passages difficiles ou vous proposer des exemples concrets.\n- **S'entraîner et réviser** : vous guider pas à pas dans la résolution d'exercices, vous aider à synthétiser des notions clés et tester vos connaissances.\n- **Rechercher des informations** : vous apporter des éclaircissements et des repères complémentaires pour approfondir vos sujets d'étude.\n- **Créer des supports de travail** : si cela peut vous aider à mieux visualiser un concept (par exemple une notion abstraite), je peux générer des illustrations ou des schémas pédagogiques.\n\nToutes mes capacités sont mobilisées au service de votre apprentissage. Notez que cette présentation est générale et ne repose pas sur un cours indexé.",
+          "mode": "general_tutor",
+          "agents": [
+            "tutor"
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Qu'est-ce que la cyber kill chain ?"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nLa cyber kill chain est un modèle conceptuel développé par Lockheed Martin qui décompose les étapes chronologiques d'une cyberattaque, depuis la recherche initiale d'informations jusqu'à la réalisation des objectifs de l'attaquant. Il s'agit d'une notion classique et établie en cybersécurité qui n'est pas directement mentionnée dans les extraits de cours fournis.\n\n**Explication**\nLe modèle découpe une attaque informatique en 7 phases successives :\n1. Reconnaissance : l'attaquant collecte des informations sur la cible (adresses IP, adresses courriel, technologies utilisées).\n2. Armement (Weaponization) : il crée une charge malveillante (payload) associée à une vulnérabilité.\n3. Livraison (Delivery) : il transmet la charge malveillante à la cible (par exemple via un courriel d'hameçonnage ou une clé USB).\n4. Exploitation : la vulnérabilité du système est exploitée pour exécuter le code malveillant.\n5. Installation : le logiciel malveillant s'installe sur l'équipement de la victime pour maintenir son accès.\n6. Commandement et contrôle (C2) : la machine compromise établit un canal de communication à distance avec le serveur de l'attaquant.\n7. Actions sur objectifs : l'attaquant accomplit son but final (exfiltration de données, chiffrement par ransomware, destruction).\n\nL'intérêt pédagogique de ce modèle est de montrer qu'interrompre la chaîne à n'importe quelle étape permet d'éviter la réussite globale de l'attaque.\n\n**Exemple**\nImaginons un pirate ciblant une entreprise : il recherche les profils des employés sur les réseaux sociaux (Reconnaissance), prépare un fichier PDF piégé (Armement), l'envoie par courriel au service comptable (Livraison), le comptable ouvre le document ce qui déclenche la faille (Exploitation), le programme s'installe discrètement sur le poste (Installation), se connecte au serveur du pirate pour recevoir des instructions (Commandement et contrôle), puis vole les bases de données clients (Actions sur objectifs).\n\n**Indication de la partie du cours**\nCette notion relève de la culture générale en cybersécurité et n'est pas détaillée dans les extraits fournis, mais vous pouvez réviser des notions connexes dans le cours cybersecurity OT 40 CM3 Spring 2026, partie Threats hunting.\n\n**Question de vérification**\nÀ quelle étape de la cyber kill chain correspond le moment où le système compromis ouvre une communication à distance avec le serveur du pirate pour recevoir ses instructions ?",
+          "mode": "course_grounded",
+          "agents": [
+            "tutor"
+          ]
+        },
+        {
+          "role": "user",
+          "content": "explique-le plus simplement"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nLa cyber kill chain est simplement le plan étape par étape qu'un cyberattaquant suit pour réussir son attaque, depuis la préparation initiale jusqu'à l'atteinte de son objectif final.\n\n**Explication**\nPour comprendre cette notion de façon intuitive, on peut la comparer au déroulement d'un cambriolage :\n1. **La préparation** : L'attaquant repère sa cible et prépare son piège.\n2. **L'infiltration** : Il transmet son piège (par exemple via un e-mail malveillant) pour s'introduire dans le système.\n3. **La prise de contrôle et l'action** : Il prend la main sur le système et réalise son objectif (voler des données ou bloquer des installations).\n\n- **Complément pédagogique général (non tiré du cours) :** La Cyber Kill Chain est un modèle classique découpé en étapes chronologiques (reconnaissance, armement, livraison, exploitation, installation, contrôle à distance, action sur les objectifs). L'intérêt est de bloquer l'attaquant le plus tôt possible dans cette chaîne.\n- **Ce que dit le cours :** Le modèle de la Cyber Kill Chain n'est pas directement détaillé dans les extraits de cours fournis, mais ceux-ci abordent des notions connexes relatives à l'évaluation et au traitement des attaques, notamment dans le cours cybersecurity OT 40 CM4 Spring 2026 (partie Incident handling process) et le cours cybersecurity OT 40 CM3 Spring 2026 (partie Définition).\n\n**Exemple**\nUn pirate souhaite voler des données dans une entreprise :\n- **Étape 1** : Il recherche les adresses e-mail des employés sur Internet.\n- **Étape 2** : Il envoie un message piégé contenant un fichier malveillant.\n- **Étape 3** : Un employé ouvre le fichier, ce qui installe un logiciel espion.\n- **Étape 4** : Le pirate prend le contrôle à distance et recopie les documents secrets.\n\n**Indication de la partie du cours**\nCette notion globale n'est pas directement mentionnée dans les extraits fournis, mais les procédures de réponse aux incidents sont abordées dans le cours cybersecurity OT 40 CM4 Spring 2026, partie Incident handling process.\n\n**Question de vérification**\nÀ votre avis, pourquoi est-il beaucoup plus avantageux pour une équipe de sécurité de bloquer un attaquant dès l'étape de reconnaissance plutôt qu'à la dernière étape ?",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Et Stuxnet, ça rentre où dans tout ça ?"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nStuxnet est un cas d'école emblématique qui illustre le déroulement complet d'une Cyber Kill Chain appliquée aux systèmes d'information industriels (OT/ICS). Bien que le terme précis « Stuxnet » ne soit pas mentionné directement dans les extraits du cours fournits, il s'agit d'une connaissance générale établie : Stuxnet est un ver informatique découvert en 2010 qui a parcouru toutes les étapes de la Kill Chain pour saboter des infrastructures industrielles critiques.\n\n**Explication**\n- Ce que dit le cours : Les extraits abordent l'architecture des réseaux industriels (cybersecurity OT 40 CM1, partie ICS/OT architecture), notamment la séparation entre la zone d'entreprise (IT) et les zones industrielles (OT), ainsi que la recherche et l'analyse des scénarios de menaces (CM3, partie Threats hunting).\n- Le complément pédagogique général : Stuxnet s'insère dans la Cyber Kill Chain de la manière suivante :\n1. Reconnaissance et Armement : Les concepteurs ont étudié en détail les équipements industriels cibles (automates Siemens) et ont créé une arme réseau intégrant plusieurs failles inédites (zero-days).\n2. Livraison (Delivery) : Infiltration au cœur du réseau d'entreprise puis dans le réseau OT en traversant l'isolation (air-gap) au moyen de clés USB infectées.\n3. Exploitation et Installation : Prise de contrôle des postes de travail d'ingénierie et installation du ver.\n4. Action sur objectifs : Altération directe des ordres envoyés aux automates industriels pour détruire les centrifugeuses, tout en envoyant de de fausses informations de fonctionnement normal aux écrans des opérateurs.\n\n**Exemple**\nLors de l'étape de « Livraison », alors que le réseau industriel OT était physiquement séparé d'Internet pour des raisons de sécurité, les attaquants ont piégé des clés USB utilisées par des prestataires. Dès qu'une clé était branchée sur un ordinateur de la zone OT, Stuxnet s'exécutait automatiquement.\n\n**Indication de la partie du cours**\nL'architecture des réseaux industriels et l'analyse des scénarios de menaces sont traitées dans le cours cybersecurity OT 40 CM1 Spring 2026, partie ICS/OT architecture, ainsi que dans le CM3 Spring 2026, partie Threats hunting.\n\n**Question de vérification**\nÀ quelle étape précise de la Cyber Kill Chain correspond le moment où Stuxnet modifie la vitesse des centrifugeuses pour les détruire ?",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        },
+        {
+          "role": "user",
+          "content": "Quelle est la différence entre IT et OT en cybersécurité ?"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nLa différence principale réside dans leur objectif et leur domaine d'application : l'IT (Information Technology) gère l'information et le traitement des données (bureautique, serveurs, bases de données), tandis que l'OT (Operational Technology) contrôle et surveille des équipements physiques et des procédés industriels (automates, usines, réseaux électriques).\n\n**Explication**\nEn cybersécurité, ces deux univers se distinguent selon plusieurs dimensions majeures :\n- **Les technologies** : L'IT est principalement composée de postes de travail, de serveurs et d'applications informatiques. L'OT repose sur des systèmes de contrôle industriel (ICS) connectés à des capteurs et actionneurs matériels.\n- **Les priorités de sécurité** : En IT, la priorité absolue est la **confidentialité** et l'intégrité des données. En OT, la priorité est la **disponibilité** continue et la **sécurité physique** (sûreté des personnes, des machines et de l'environnement).\n- **Le fonctionnement du réseau** : Contrairement aux réseaux IT modernes où la manipulation du trafic informatique peut sembler plus complexe, les réseaux OT gèrent des flux de commande directe sur le monde physique.\n\n**Exemple**\nDans une banque (environnement IT), une attaque informatique cherche à dérober des données financières confidentielles. Dans une usine d'eau potable ou une centrale électrique (environnement OT), une cyberattaque cherche à modifier le comportement d'une vanne ou d'une turbine, ce qui peut provoquer une panne physique ou un accident réel.\n\n**Indication de la partie du cours**\nCette notion est traitée dans le cours cybersecurity OT 40 CM1 Spring 2026, parties « Differences between IT and OT systems : Technology » et « To examine the disparities in cybersecurity between the Operational Technology ».\n\n**Question de vérification**\nSelon vous, pourquoi la disponibilité est-elle considérée comme plus prioritaire que la confidentialité dans un système OT par rapport à un système IT ?",
+          "mode": "course_grounded",
+          "agents": [
+            "tutor"
+          ]
+        },
+        {
+          "role": "user",
+          "content": "As-tu accès à internet ?"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nOui, j'ai accès à Internet. En tant que tuteur EduTutor, je peux mobiliser cette capacité pour effectuer des recherches d'information en ligne afin de t'accompagner dans ton apprentissage, par exemple pour consulter de la documentation technique ou illustrer un concept.\n\n**Explication**\nCet accès à Internet me sert d'outil pédagogique à ton service. Lorsque tes extraits de cours ne contiennent pas une information spécifique ou si tu as besoin d'exemples réels et récents pour mieux comprendre une notion (comme une actualité en cybersécurité ou les spécifications d'un protocole), je peux chercher des ressources fiables sur le Web pour enrichir nos explications.\n\n**Exemple**\nSi tu souhaites approfondir le cours sur la cybersécurité OT et que tu me demandes des détails sur les spécifications officielles du protocole Modbus/TCP ou sur le déroulement d'une cyberattaque industrielle récente, je peux effectuer une recherche sur Internet pour te fournir une étude de cas concrète.\n\n**Indication de la partie du cours**\nCette question concerne le fonctionnement du tuteur EduTutor et ne fait pas partie des connaissances traitées dans les extraits de cours fournis.\n\n**Question de vérification**\nSouhaites-tu que nous utilisions cette recherche pour illustrer une notion de ton cours avec un exemple concret du Web, ou préfères-tu poursuivre la révision des architectures IT/OT ?",
+          "mode": "course_grounded",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1785142132.5410094,
+      "updated_at": 1785142572.743756
+    },
+    {
+      "id": 15,
+      "title": "Résumé du cours CM1",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Résume le cours CM1"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici le résumé 👇",
+          "mode": "content",
+          "agents": [
+            "idp",
+            "content"
+          ],
+          "deliverable": {
+            "type": "summary",
+            "title": "Résumé — cybersecurity_OT_40_CM1_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM1_Spring_2026.pdf",
+            "markdown": "# Résumé structuré : Cybersécurité des systèmes industriels et OT (CM1)\n\n## 1. Vue d'ensemble\n\nCe document rassemble les éléments du cours d'introduction (*Lecture 1*) dispensé par Kawtar Zerhouni (ECC / UTER MID@S) sur les fondamentaux des systèmes industriels et de la cybersécurité des technologies opérationnelles (OT). \n\nL'enseignement s'inscrit dans un module de 16 heures articulé autour de 4 cours (Fondamentaux, Menaces et risques, Réponse aux incidents et résilience, Surveillance et IA) et évalué par deux travaux pratiques/livrables techniques ainsi qu'un court mini-projet. L'objectif principal est de comprendre le fonctionnement des systèmes cyber-physiques, leurs architectures, leurs composants spécifiques, ainsi que les contraintes particulières qui différencient la sécurité OT de la sécurité IT classique.\n\n---\n\n## 2. Thèmes principaux\n\n* **Paysage des menaces et incidents réels en environnement OT :**\n  * Des attaques réelles illustrent l'impact des cyberattaques sur le monde physique : attaque sur le système de gestion de distribution SCADA (DMS) en Ukraine ayant privé 225 000 clients d'électricité et désactivé au moins 27 sous-stations ; spoofing radio via SDR (Software Defined Radio) pouvant déclencher un freinage d'urgence (2025) ; propagation de malwares de l'IT vers l'OT (2025) ; présence de canaux d'accès distant cachés dans des véhicules importés (2025).\n* **Architecture des systèmes ICS/OT et modèle de Purdue :**\n  * Découpage fonctionnel et réseau en zones :\n    * **Zone Entreprise (IT) :** Applications métier, serveurs, postes de travail classiques gérés selon les politiques IT.\n    * **Zone IDMZ (Industrial Demilitarized Zone) :** Zone tampon entre l'IT et l'OT hébergeant des services partagés (historiens de données, serveurs de rebond pour accès distant, gestion des correctifs/patchs).\n    * **Zone Industrielle / OT :** Équipements de contrôle du procédé physique (SCADA, HMI, PLC, contrôleurs de sécurité, capteurs et actionneurs).\n* **Fonctions opérationnelles clés de l'ICS :**\n  * **Observation (*View*) :** Présentation passive d'informations en temps réel à l'opérateur pour prise de décision.\n  * **Surveillance (*Monitor*) :** Analyse automatisée au sein d'une boucle de contrôle comparant des paramètres (pression, température, niveau) à des seuils pour déclencher des alarmes ou des arrêts.\n  * **Contrôle (*Control*) :** Actionnement direct des équipements (ouverture de vannes, démarrage de moteurs) déclenché automatiquement ou par l'opérateur via une interface homme-machine (HMI).\n* **Évolution et composants matériels ICS :**\n  * Historique : transition des systèmes à relais câblés vers les automates programmables industriels (PLC), introduits en 1968 (Modicon).\n  * Principaux équipements :\n    * **PLC (*Programmable Logic Controller*) :** Gestion de procédés restreints (quelques-uns à quelques centaines de points d'E/S).\n    * **SCADA (*Supervisory Control And Data Acquisition*) :** Réseautage de multiples PLC pour la supervision de procédés étendus ou distants.\n    * **DCS (*Distributed Control System*) :** Contrôle centralisé d'usines complexes à grande échelle gérant des milliers d'E/S via des unités de traitement distribuées (DPU).\n    * **SIS (*Safety Instrumented Systems*) :** Systèmes dédiés indépendants assurant la mise en sécurité ou l'arrêt d'urgence (ESD) du procédé en cas de défaillance.\n* **Protocoles de communication et vulnérabilités héritées :**\n  * Évolution des communications série (Modbus sur RS-232/RS-485, DeviceNet, PROFIBUS) vers les réseaux Ethernet (EtherNet/IP, PROFINET).\n  * Les protocoles industriels historiques (Modbus, DNP3 classique, PROFINET, Siemens S7 hérité, OPC DA) ont été conçus pour des réseaux isolés et manquent de protections cryptographiques natives (absence d'authentification, de contrôle d'intégrité ou de chiffrement).\n* **Comparaison IT vs OT et réorganisation de la triade CIA :**\n  * En IT, l'accent est traditionnellement mis sur la confidentialité. En OT, la disponibilité (*Availability*) et la sécurité physique (*Safety*) prévalent.\n  * Les piliers de la sécurité OT incluent : Confidentialité, Intégrité (étendue aux programmes PLC, configurations SCADA et états en temps réel), Authentification, Non-répudiation, Résilience et Sécurité physique (*Safety*).\n\n---\n\n## 3. Concepts importants\n\n* **Operational Technology (OT) vs ICS :**\n  * L'ICS désigne les systèmes de contrôle automatisés (SCADA, DCS, PLC). L'OT est une notion plus large (conforme au NIST SP 800-82 Rev 3) englobant l'ICS, la gestion technique du bâtiment (HVAC, contrôle d'accès), les transports (ferroviaire, ports, aéroports) et les infrastructures critiques (énergie, eau).\n* **Zone IDMZ (Industrial Demilitarized Zone) :**\n  * Tampon de sécurité s'appuyant sur des pare-feux et plateformes de virtualisation pour isoler le réseau d'entreprise du réseau de production tout en permettant l'échange restreint de données.\n* **Systèmes instrumentés de sécurité (SIS) :**\n  * Systèmes matériels/logiciels matériels distincts du contrôle commande classique, utilisant notamment des mécanismes de vote pour déclencher l'arrêt d'urgence en cas de danger.\n* **Résilience et Sécurité physique (*Safety*) :**\n  * **Résilience :** Capacité du système à maintenir la connaissance de son état et un fonctionnement normalisé face aux perturbations et attaques.\n  * **Sécurité (*Safety*) :** Garantie que le système ne provoquera ni blessure, ni dommage humain ou environnemental en cas d'attaque ou de dysfonctionnement.\n* **Contraintes de sécurité spécifiques à l'OT :**\n  * **Ressources matérielles :** Équipements embarqués à puissance processeur et mémoire très limitées.\n  * **Contraintes réseau :** Nécessité d'échanges temps réel stricts où l'introduction de latence (par un pare-feu ou un NIDS) peut altérer le procédé.\n  * **Contraintes d'exploitation et de disponibilité :** Fonctionnement continu 24/7 sans environnement de test, rendant l'application de correctifs (*patches*) difficile.\n  * **Contraintes d'ergonomie/sécurité physique :** Impossibilité d'appliquer des politiques d'authentification ou de verrouillage complexes qui bloqueraient la réaction immédiate des opérateurs en situation d'urgence.\n\n---\n\n## 4. Points à retenir\n\n1. **Impact cyber-physique direct :** Une atteinte à un système OT ne se limite pas à la perte de données : elle peut entraîner la destruction d'équipements, des interruptions de services cruciaux (électricité, eau, transports) ou mettre en danger la vie humaine.\n2. **Protocoles vulnérables par conception :** La simple encapsulation de protocoles industriels anciens sur de l'Ethernet moderne n'assure pas leur sécurité ; un attaquant ayant accès au réseau OT peut observer, rejouer ou falsifier les commandes en l'absence de mécanismes d'authentification ou d'inspection dédiée.\n3. **Inversion des priorités de sécurité :** En OT, la continuité de service (disponibilité) et la protection contre les risques physiques (*safety*) sont prédominantes par rapport à la confidentialité des données.\n4. **Gestion des risques multi-niveaux :** La sécurisation requiert une approche globale articulée autour de la sécurité physique, de la sécurité réseau (segmentation), de la sécurité des postes, des applications et du renforcement (*hardening*) des équipements.\n\n---\n\n## 5. Limites du document et de son extraction\n\n* **Périmètre restreint :** Le contenu analysé concerne principalement le support du cours d'introduction (*CM1 / Lecture 1*). Les cours 2, 3 et 4 (Analyse de risques, Réponse aux incidents, Surveillance par IA) sont seulement cités dans le sommaire du module.\n* **Extractions tronquées :** Certaines sections extraites de la présentation comportent des phrases incomplètes ou des coupures de texte dans la source d'origine (notamment lors de la présentation des architectures et des protocoles).\n* **Absence de détails de mise en œuvre :** Le document pose le cadre conceptuel, les normes de référence (NIST SP 800-82 Rev 3, ISA/IEC 62443, MITRE ATT&CK for ICS) et les définitions, mais ne détaille pas les configurations techniques ou les travaux pratiques associés.",
+            "id": "0e035f5fe946",
+            "version": 1
+          }
+        },
+        {
+          "role": "user",
+          "content": "Fais-moi une fiche de révision du CM3"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici ta fiche de révision 👇",
+          "mode": "content",
+          "agents": [
+            "idp",
+            "content"
+          ],
+          "deliverable": {
+            "type": "revision",
+            "title": "Fiche de révision — cybersecurity_OT_40_CM3_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM3_Spring_2026.pdf",
+            "markdown": "# FICHE DE RÉVISION : CYBERSÉCURITÉ ICS/OT & SURVEILLANCE RÉSEAU\n\n---\n\n## 1. Les concepts à maîtriser\n\n* **Surveillance de la sécurité ICS/OT (*Security Monitoring*)** :\n  * Consiste à surveiller en continu l'activité du réseau industriel pour détecter les comportements suspects ou incidents potentiels.\n  * Offre un rôle d'alerte précoce.\n  * **Types de réponses** :\n    * *Correctives* : activités de réponse aux incidents (Incident Response - IR / CM4).\n    * *Préventives* : correction ou ajout de contrôles de sécurité (ex. modification/ajout de règles de pare-feu suite à une détection).\n\n* **Les 3 piliers de la surveillance de la sécurité** :\n  1. **Surveillance passive (*Passive Security Monitoring*)** : Fonctionne sur le principe de non-interaction. Aucune modification de fichier ou de configuration, aucune émission de paquets réseau.\n  2. **Surveillance active (*Active Security Monitoring*)** : Interrogation active de l'environnement (scans réseau, agents actifs sur hôtes, inspection manuelle).\n  3. **Chasse aux menaces (*Threat Hunting*)** : Démarche reposant sur la formulation d'hypothèses de risques/attaques et la recherche de preuves pour confirmer ou infirmer leur présence.\n\n* **Modèle OSI vs Pile TCP/IP** :\n  * **Modèle OSI** : Modèle théorique à 7 couches développé par l'ISO.\n  * **Pile TCP/IP** : Modèle pratique utilisé par Internet (4 ou 5 couches).\n  * **Différence majeure** : Les couches *Présentation* et *Session* du modèle OSI ne figurent pas dans la pile Internet. Si ces services sont nécessaires, ils doivent être gérés directement par la couche *Application*.\n\n* **Encapsulation & Communication réseau** :\n  * Encapsulation des données à chaque couche : **Message** (Application) $\\rightarrow$ **Segment** (Transport) $\\rightarrow$ **Datagramme** (Réseau) $\\rightarrow$ **Trame** (Liaison).\n  * Le multiplexage et le démultiplexage permettent d'acheminer les données vers le bon *socket* (combinaison Adresse IP + Port TCP/UDP).\n\n* **Sous-réseaux (*Subnets*) & Adressage IP** :\n  * Adresse IP : Identifiant 32 bits attribué aux interfaces hôtes/routeurs.\n  * Sous-réseau : Ensemble d'interfaces pouvant s'atteindre physiquement sans traverser de routeur intermédiaire. Défini par un masque de sous-réseau (ex. `/24`).\n\n* **Attribution dynamique IP (DHCP)** :\n  * Protocole \"plug-and-play\" permettant l'allocation, le renouvellement de bail et la réutilisation d'adresses IP sur un réseau.\n\n* **Pentesting, Honeypots & Simulation OT** :\n  * **Pentesting** : Évaluation de la sécurité par simulation d'attaques réelles.\n  * **Honeypot** : Système piégé simulant des services vulnérables pour attirer et étudier les attaquants.\n  * **Spécificités OT** : Emulation/simulation d'automates industriels (PLC Siemens S7) en environnement contrôlé (lab/VM) pour analyser le comportement des attaquants sans impacter la production.\n\n---\n\n## 2. Les définitions importantes\n\n* **Passive Security Monitoring** : Approche de surveillance basée sur l'observation stricte (watch-and-observe) sans envoi de paquets ni modification du système hôte/réseau.\n* **Mode Promiscuous (*Promiscuous Mode*)** : Mode d'une carte réseau (NIC) lui permettant de capturer et transmettre à l'application l'ensemble des paquets circulant sur le segment, et non uniquement ceux qui lui sont adressés.\n* **Port SPAN (*Switched Port Analyzer*)** : Port configuré sur un commutateur pour miroirer le trafic d'un switch entier ou de VLANs vers un système de surveillance.\n* **Point d'étranglement (*Choke Point*)** : Emplacement stratégique dans l'architecture réseau où le trafic inter-zones est canalisé, facilitant une capture globale du trafic.\n* **ELK Stack** : Suite de gestion de logs composée d'**Elasticsearch** (stockage/indexation/requêtes), **Logstash** (pipeline de collecte/ingestion) et **Kibana** (visualisation graphique).\n* **Wazuh** : Plateforme open-source de surveillance de sécurité basée sur des agents hôtes (détection de menaces, contrôle d'intégrité, analyse).\n* **Active Security Monitoring** : Surveillance interrogeant activement les équipements (scans de ports, requêtes vers les services, agents actifs).\n* **Threat Hunting** : Processus d'investigation proactif consistant à émettre une hypothèse de compromission et à vérifier sa réalité à partir des données récoltées.\n* **GreyNoise** : Service en ligne d'analyse de réputation d'adresses IP permettant de vérifier si une IP suspecte est associée à des campagnes malveillantes connues.\n* **Modèle OSI** : Modèle de référence ISO à 7 couches (Physique, Liaison, Réseau, Transport, Session, Présentation, Application).\n* **Sous-réseau (*Subnet*)** : Section isolée d'un réseau dont les interfaces partagent le même préfixe d'adresse IP et communiquent sans routeur.\n* **DHCP (*Dynamic Host Configuration Protocol*)** : Protocole réseau fournissant automatiquement une adresse IP, un masque de sous-réseau, une passerelle par défaut et des serveurs DNS à un hôte.\n* **Pentesting (*Test d'intrusion*)** : Simulation méthodique d'une attaque informatique visant à identifier et corriger les failles avant leur exploitation malveillante.\n* **Honeypot (*Pot de miel*)** : Système leurre conçu pour attirer les cyberattaquants, piéger les scripts automatisés et observer les méthodes d'attaque.\n* **Conpot** : Honeypot ICS/SCADA open-source simulant des automates (PLC) et des protocoles industriels (Modbus, S7comm, SNMP).\n* **Snap7** : Bibliothèque open-source de communication avec les automates Siemens S7 (S7-300, S7-400, S7-1200, S7-1500) via S7comm, utilisable en mode client ou serveur (simulation).\n* **Metasploit** : Plateforme de pentesting offrant des modules d'exploitation, des scanners et l'interface `msfconsole`.\n* **plcscan.py** : Script Python open-source permettant de scanner des réseaux à la recherche d'automates industriels (ex. ports 102 S7comm, 502 Modbus) et d'en extraire les informations techniques (version, firmware, ID).\n* **Nmap** : Outil en ligne de commande pour la découverte d'hôtes, le cartographiage réseau et le balayage de ports ouverts.\n\n---\n\n## 3. Les méthodes, étapes et règles à connaître\n\n### A. Techniques de surveillance passive\n1. **Sniffing de paquets réseau** :\n   * Activation du mode *promiscuous* sur la carte réseau.\n   * Utilisation de sessions **SPAN** sur les switchs ou positionnement sur des **Choke Points**.\n   * Analyse des paquets à l'aide d'outils comme **Wireshark**.\n2. **Collecte et corrélation de logs d'événements** :\n   * Centralisation des logs issus de sources diverses (fichiers texte comme Apache/Linux auth vs formats binaires comme Windows Event Log).\n   * Normalisation des champs d'information (ex. uniformiser `remoteIP` et `rhost` sous un même champ *Source IP* via Logstash/ELK).\n3. **Agents hôtes** :\n   * Installation d'agents légers (ex. Wazuh) collectant périodiquement les statistiques et événements du système.\n\n### B. Procédure d'échange DHCP (4 étapes - DORA)\n1. **DHCP Discover** : Le client envoie un message en *broadcast* (`src: 0.0.0.0:68`, `dest: 255.255.255.255:67`) pour localiser un serveur.\n2. **DHCP Offer** : Le serveur répond en *broadcast* (`src: IP_Serveur:67`, `dest: 255.255.255.255:68`) avec une proposition d'adresse IP (`yiaddr`) et une durée de bail.\n3. **DHCP Request** : Le client émet une demande en *broadcast* pour valider l'utilisation de l'IP proposée.\n4. **DHCP ACK** : Le serveur confirme l'attribution de l'IP et transmet la configuration complémentaire (passerelle par défaut, serveur DNS, masque).\n*(Note : Les deux premières étapes peuvent être ignorées si le client demande la réutilisation d'une adresse précédemment attribuée).*\n\n### C. Démarche d'un exercice de Threat Hunting\n1. **Établissement d'une hypothèse** (ex. *\"Des connexions externes suspectes entrent dans le réseau industriel\"*).\n2. **Collecte des éléments de preuve** :\n   * Journaux de trafic réseau et logs de pare-feu (inspection des flux entrants / *ingress*).\n   * Logs d'événements OS (Windows Event Logs) et d'applications.\n   * Journaux PLC/HMI.\n3. **Analyse des indicateurs** :\n   * Analyse des ports spécifiques (ex. port 445 SMB, port 0 ICMP / PING).\n   * Utilisation de services de réputation IP (ex. GreyNoise) pour vérifier la dangerosité des IP distantes.\n   * Recherche de routeurs (ex. Moxa) ou cartes réseau PLC (ex. Rockwell Automation) exposés directement à Internet sans restriction d'accès.\n\n### D. Typologies de Pentest\n* **Selon l'origine de l'attaque** :\n  * *Interne* : Simulation d'un employé malveillant sur le réseau local.\n  * *Externe* : Simulation d'un attaquant distant depuis Internet.\n* **Selon le niveau d'information transmis** :\n  * *Boîte noire (Black Box)* : Aucune information préalable sur la cible.\n  * *Boîte grise (Grey Box)* : Informations partielles fournies (ex. identifiants de test).\n  * *Boîte blanche (White Box)* : Accès complet à l'architecture et à la documentation.\n\n### E. Méthodologie TP / Lab de cybersécurité OT\n1. **Configuration du leurre / simulateur** :\n   * Déploiement de **Conpot** ou **Snap7** (script Python) sur une VM Ubuntu Server pour émuler un automate Siemens S7.\n2. **Reconnaissance et Scan** :\n   * Utilisation de **Nmap** ou **plcscan.py** pour scanner la VM, identifier les ports ouverts (port 102 pour S7Comm, port 502 pour Modbus, port 161 pour SNMP) et extraire la signature de l'automate.\n3. **Attaque / Exploitation contrôlée** :\n   * Utilisation de **Metasploit** (`msfconsole`) pour tester les modules d'analyse/exploitation et valider les défenses.\n\n---\n\n## 4. Les confusions fréquentes\n\n* **Surveillance Passive vs Surveillance Active** :\n  * *Passive* : Se contente d'observer et de lire (sniffing, collecte de logs). N'injecte aucun paquet et ne modifie rien sur le réseau.\n  * *Active* : Interroge les systèmes en émettant des paquets (scans Nmap, requêtes d'agents). Peux impacter des équipements fragiles.\n* **Sniffing Réseau vs Scan Réseau** :\n  * *Sniffing* (ex. Wireshark, tcpdump) : Capture passivement le trafic qui passe sur un segment.\n  * *Scan* (ex. Nmap, Angry IP Scanner) : Envoie activement des sondes vers des hôtes cibles pour détecter les machines actives et les ports ouverts.\n* **Modèle OSI vs Pile TCP/IP (Internet)** :\n  * Le modèle OSI est une référence théorique en 7 couches.\n  * La pile TCP/IP réelle ne possède pas de couches séparées pour la *Présentation* et la *Session*.\n* **Logs Texte vs Logs Binaires** :\n  * Les logs en texte brut (ex. Apache, Linux auth) peuvent se lire avec n'importe quel éditeur de texte.\n  * Les logs propriétaires (ex. Windows Event Log) sont stockés au format binaire et nécessitent des outils dédiés (Event Viewer) pour leur lecture.\n* **Hétérogénéité du nommage des logs** :\n  * Un même type d'information peut porter des noms de variables différents selon la source (ex. `remoteIP` sous Apache vs `rhost` dans les logs Linux pour désigner l'adresse IP source), rendant obligatoire l'étape de normalisation dans un SIEM/ELK.\n* **Agents de sécurité sur les systèmes ICS/OT** :\n  * Contrairement aux systèmes IT classiques, **de nombreux équipements OT ne peuvent pas exécuter d'agents hôtes** (raisons : contraintes matérielles/ressources, systèmes d'exploitation propriétaires/anciens, ou interdictions des constructeurs/OEM).\n\n---\n\n## 5. Ordre conseillé de révision\n\n1. **Bases Réseaux & Modèle en Couches (OSI, TCP/IP, Encapsulation, IP, Subnets, DHCP)**\n   * *Justification* : Maîtriser l'encapsulation des paquets, les ports, l'adressage et le protocole DHCP est indispensable avant d'aborder la capture et l'analyse de trafic.\n2. **Principes Généraux de la Surveillance de Sécurité en ICS/OT**\n   * *Justification* : Comprendre les objectifs de la surveillance (détection précoce, réponses préventives vs correctives) et la distinction fondamentale entre le passif, l'actif et la chasse aux menaces.\n3. **Techniques et Outils de Surveillance Passive**\n   * *Justification* : Étudier le fonctionnement du mode promiscté, des ports SPAN, des points d'étranglement (*choke points*), ainsi que la collecte et la corrélation de logs (ELK, Wazuh).\n4. **Surveillance Active et Threat Hunting**\n   * *Justification* : Passer à l'interrogation active (scans de ports/IP) et à la démarche d'investigation basée sur des hypothèses (analyse d'IP avec GreyNoise, détection d'équipements Moxa/Rockwell exposés).\n5. **Pentesting, Honeypots et Écosystème d'Analyse Industrielle (Conpot, Snap7, Nmap, plcscan.py, Metasploit)**\n   * *Justification* : Appliquer l'ensemble des concepts théoriques dans le cadre des TP/Labs : comprendre comment simuler une usine/PLC (Conpot/Snap7) et comment l'analyser ou la tester avec les outils de sécurité.",
+            "id": "0f52360c206a",
+            "version": 1
+          }
+        },
+        {
+          "role": "user",
+          "content": "raccourcis-la"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici la version mise à jour 👇",
+          "mode": "compose",
+          "agents": [
+            "compose"
+          ],
+          "deliverable": {
+            "type": "revision",
+            "title": "Fiche de révision — cybersecurity_OT_40_CM3_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM3_Spring_2026.pdf",
+            "markdown": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 38.640101167s.\n\nYour Google API key is on the free tier (<= 250 reques",
+            "id": "0f52360c206a",
+            "version": 2
+          }
+        },
+        {
+          "role": "user",
+          "content": "raccourcis-la"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici la version mise à jour 👇",
+          "mode": "compose",
+          "agents": [
+            "compose"
+          ],
+          "deliverable": {
+            "type": "revision",
+            "title": "Fiche de révision — cybersecurity_OT_40_CM3_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM3_Spring_2026.pdf",
+            "markdown": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 7.465358559s.\n\nYour Google API key is on the free tier (<= 250 request",
+            "id": "0f52360c206a",
+            "version": 3
+          }
+        },
+        {
+          "role": "user",
+          "content": "raccourcis-la"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici la version mise à jour 👇",
+          "mode": "compose",
+          "agents": [
+            "compose"
+          ],
+          "deliverable": {
+            "type": "revision",
+            "title": "Fiche de révision — cybersecurity_OT_40_CM3_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM3_Spring_2026.pdf",
+            "markdown": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 52.653780649s.\n\nYour Google API key is on the free tier (<= 250 reques",
+            "id": "0f52360c206a",
+            "version": 4
+          }
+        },
+        {
+          "role": "user",
+          "content": "raccourcis-la"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici la version mise à jour 👇",
+          "mode": "compose",
+          "agents": [
+            "compose"
+          ],
+          "deliverable": {
+            "type": "revision",
+            "title": "Fiche de révision — cybersecurity_OT_40_CM3_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM3_Spring_2026.pdf",
+            "markdown": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 30.543468679s.\n\nYour Google API key is on the free tier (<= 250 reques",
+            "id": "0f52360c206a",
+            "version": 5
+          }
+        },
+        {
+          "role": "user",
+          "content": "raccourcis-la"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici la version mise à jour 👇",
+          "mode": "compose",
+          "agents": [
+            "compose"
+          ],
+          "deliverable": {
+            "type": "revision",
+            "title": "Fiche de révision — cybersecurity_OT_40_CM3_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM3_Spring_2026.pdf",
+            "markdown": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 8.947504208s.\n\nYour Google API key is on the free tier (<= 250 request",
+            "id": "0f52360c206a",
+            "version": 6
+          }
+        },
+        {
+          "role": "user",
+          "content": "raccourcis-la"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici la version mise à jour 👇",
+          "mode": "compose",
+          "agents": [
+            "compose"
+          ],
+          "deliverable": {
+            "type": "revision",
+            "title": "Fiche de révision — cybersecurity_OT_40_CM3_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM3_Spring_2026.pdf",
+            "markdown": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 17.107225642s.\n\nYour Google API key is on the free tier (<= 250 reques",
+            "id": "0f52360c206a",
+            "version": 7
+          }
+        },
+        {
+          "role": "user",
+          "content": "raccourcis-la"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "Voici la version mise à jour 👇",
+          "mode": "compose",
+          "agents": [
+            "compose"
+          ],
+          "deliverable": {
+            "type": "revision",
+            "title": "Fiche de révision — cybersecurity_OT_40_CM3_Spring_2026",
+            "doc": "cybersecurity_OT_40_CM3_Spring_2026.pdf",
+            "markdown": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 31.401334923s.\n\nYour Google API key is on the free tier (<= 250 reques",
+            "id": "0f52360c206a",
+            "version": 8
+          }
+        }
+      ],
+      "created_at": 1785142597.2713068,
+      "updated_at": 1785143608.5798554
+    },
+    {
+      "id": 16,
+      "title": "Nouvelle discussion",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Analyse le cours CM4"
+        },
+        {
+          "role": "assistant",
+          "status": "error",
+          "content": "Je n'ai pas pu analyser ce document pour le moment. Réessaie."
+        },
+        {
+          "role": "user",
+          "content": "Analyse le cours CM4"
+        },
+        {
+          "role": "assistant",
+          "status": "error",
+          "content": "Je n'ai pas pu analyser ce document pour le moment. Réessaie."
+        },
+        {
+          "role": "user",
+          "content": "Analyse le cours CM4"
+        },
+        {
+          "role": "assistant",
+          "status": "error",
+          "content": "Je n'ai pas pu analyser ce document pour le moment. Réessaie."
+        },
+        {
+          "role": "user",
+          "content": "Bonjour"
+        },
+        {
+          "role": "user",
+          "content": "Bonjour"
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 10.588927012s.\n\nYour Google API key is on the free tier (<= 250 reques",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1785143649.0065758,
+      "updated_at": 1785148130.3718061
+    },
+    {
+      "id": 17,
+      "title": "Définition du pare-feu",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Explique en 2 phrases ce qu est un pare-feu."
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nUn pare-feu est un dispositif de sécurité réseau qui analyse et filtre le trafic entrant et sortant selon des règles de sécurité prédéfinies. Il agit comme une barrière de protection entre un réseau interne privé et des réseaux externes non sécurisés comme Internet afin de bloquer les accès non autorisés.\n\n**Explication**\n- **Ce que dit le cours :** Les extraits fournis du cours *cybersecurity OT 40 CM4 Spring 2026* portent sur les processus de réponse aux incidents et le confinement (court et long terme), mais ne définissent pas explicitement la notion de pare-feu.\n- **Complément général :** De façon générale, un pare-feu contrôle les communications en examinant les informations des paquets de données (adresses IP, ports, protocoles) pour décider de les autoriser ou de les rejeter. Dans le cadre de la gestion d'incidents, le pare-feu sert d'outil technique clé pour effectuer un confinement rapide en isolant un équipement ou en bloquant des flux malveillants.\n\n**Exemple**\nSi un ordinateur du réseau d'une entreprise est infecté par un logiciel malveillant, l'administrateur peut configurer le pare-feu pour bloquer immédiatement toutes les connexions sortantes de cette machine vers l'extérieur, empêchant ainsi la fuite de données.\n\n**Indication de la partie du cours**\nCette notion relève de la culture générale en cybersécurité, en lien avec la partie Incident H.Proc du cours cybersecurity OT 40 CM4 Spring 2026.\n\n**Question de vérification**\nQuel est le rôle principal d'un pare-feu lorsqu'il s'agit de protéger un réseau interne contre des accès non autorisés ?",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1785328579.267217,
+      "updated_at": 1785328645.939195
+    },
+    {
+      "id": 18,
+      "title": "Exemple de menace cybersécurité OT",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Donne un exemple concret de menace en cybersécurité OT."
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "**Réponse**\nUn exemple concret de menace en cybersécurité OT est la propagation d'un logiciel malveillant (malware) du réseau informatique d'entreprise (IT) vers le réseau industriel (OT), entraînant la perturbation ou l'arrêt des opérations physiques.\n\n**Explication**\nLes systèmes de technologies opérationnelles (OT) reposent souvent sur des réseaux historiquement considérés comme isolés ou de confiance, qui manquent de protections cryptographiques natives (comme l'authentification forte). Lorsqu'une menace s'introduit dans le réseau IT (bureautique), elle peut exploiter les connexions existantes entre l'IT et l'OT pour s'infiltrer dans la chaîne de commande industrielle et perturber le fonctionnement des équipements.\n\n**Exemple**\nUn malware s'introduit d'abord sur un ordinateur du réseau bureautique à la suite d'un courriel de hameçonnage. En l'absence de cloisonnement strict et d'authentification native sur le réseau industriel, le logiciel malveillant se propage jusqu'aux automates industriels et interrompt la chaîne de production d'une usine.\n\n**Indication de la partie du cours**\nVous pouvez revoir ces notions dans le cours cybersecurity OT 40 CM1 Spring 2026, parties « Industrial Cyber, March 2025 » et « ICS/OT functions: why does it matter in a world ».\n\n**Question de vérification**\nPourquoi le manque de protections cryptographiques natives dans les réseaux OT augmente-t-il l'impact d'une menace venant du réseau IT ?",
+          "mode": "course_grounded",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1785328684.5111763,
+      "updated_at": 1785328699.2954745
+    },
+    {
+      "id": 19,
+      "title": "Définition d'un pare-feu",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Explique en 2 phrases ce qu est un pare-feu."
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 47.308567236s.\n\nYour Google API key is on the free tier (<= 250 reques",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1785328789.2438474,
+      "updated_at": 1785328884.7524908
+    },
+    {
+      "id": 20,
+      "title": "Définition d'un pare-feu",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Explique en 2 phrases ce qu est un pare-feu."
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 38.576362744s.\n\nYour Google API key is on the free tier (<= 250 reques",
+          "mode": "mixed",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1785328915.2381012,
+      "updated_at": 1785328941.3704457
+    },
+    {
+      "id": 21,
+      "title": "Exemple de menace en OT",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Donne un exemple de menace en OT."
+        },
+        {
+          "role": "assistant",
+          "status": "success",
+          "content": "API call failed after 3 retries: HTTP 429: Gemini HTTP 429 (RESOURCE_EXHAUSTED): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash\nPlease retry in 1.709548284s.\n\nYour Google API key is on the free tier (<= 250 request",
+          "mode": "course_grounded",
+          "agents": [
+            "tutor"
+          ]
+        }
+      ],
+      "created_at": 1785328941.466271,
+      "updated_at": 1785328978.0195978
     }
   ],
-  "next_id": 8
+  "next_id": 22
 }
